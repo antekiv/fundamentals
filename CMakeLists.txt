@@ -9,3 +9,9 @@ target_link_libraries(string_test
     PRIVATE
         ProjectConfiguration
 )
+
+add_executable(vector vector.cpp)
+target_link_libraries(vector
+    PRIVATE
+        ProjectConfiguration
+)
