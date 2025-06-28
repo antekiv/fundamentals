@@ -9,12 +9,6 @@
 
 // std::prev(), std::next();
 
-// won't alive if copied by memcpy
-struct Strange {
-    int x_;
-    int& r_;
-    Strange(int x) : x_(x), r_(x_) {}
-};
 
 // PoolAllocator - allocate a big array, and then give small peaces
 // StackAllocator
@@ -53,27 +47,29 @@ struct allocator {
 
 template <typename T, typename Alloc = std::allocator<T>>
 class vector {
-    T* arr_;
-    size_t sz_;
-    size_t cap_;
-    Alloc alloc_;
-
-    using AllocTraits = std::allocator_traits<Alloc>;
+    T*      arr_ = nullptr;
+    size_t   sz_ = 0;
+    size_t  cap_ = 0;
+    Alloc alloc_ = Alloc();
 
 private:
     template <bool IsConst>
     class base_iterator {
     public:
         using pointer_type = std::conditional_t<IsConst, const T*, T*>;
-        using reference_type = std::conditional<IsConst, const T&, T&>;
+        using reference_type = std::conditional_t<IsConst, const T&, T&>;
         using value_type = T;
     private:
         pointer_type ptr_;
-        base_iterator(T* ptr): ptr_(ptr) {}
+        
     public:
-
+        base_iterator(T* ptr): ptr_(ptr) {}
         base_iterator(const base_iterator&) = default;
         base_iterator& operator=(const base_iterator&) = default;
+
+        bool operator==(const base_iterator& other) const {
+            return ptr_ == other.ptr_;
+        }
         
         reference_type operator*() const {return *ptr_;};
         pointer_type operator->() const {return ptr_;}
@@ -119,26 +115,50 @@ public:
     }
 
 public:
-    void push_back(const T& value) {
+    using AllocTraits = std::allocator_traits<Alloc>;
+    explicit vector(size_t count = 0, const Alloc& alloc = Alloc())
+        : sz_(count)
+        , alloc_(alloc) {
+            reserve(count);
+        } 
+
+    ~vector() {
+        for (size_t i = 0; i < sz_; ++i) {
+            AllocTraits::destroy(alloc_, arr_ + i);
+        }
+
+        AllocTraits::deallocate(alloc_, arr_, cap_);
+    }
+
+    template <typename... Args>
+    void emplace_back(Args&&... args) {
         if (sz_ == cap_) {
             reserve(cap_ > 0 ? cap_ * 2 : 1);
         }
+
+        AllocTraits::construct(alloc_, arr_ + sz_, std::forward<Args>(args)...);
+        ++sz_;
     }
 
-    vector& operator=(const vector& other)
+    template <typename... Args>
+    void push_back(Args&&... args) {
+        emplace_back((args)...);
+    }
+
+    vector& operator=(const vector& other) const &
     {
         Alloc new_alloc = AllocTraits::propagate_on_container_copy_assigment::value
             ? other.alloc_ : alloc_;
 
         T* new_arr = AllocTraits::allocate(new_alloc, other.sz_);
-        size_t current_copied = 0;
+        size_t copied = 0;
         try { 
-            for (; current_copied < sz_; ++current_copied) { 
-                AllocTraits::construct(new_alloc, new_arr + current_copied, arr_[current_copied]);
+            for (; copied < sz_; ++copied) { 
+                AllocTraits::construct(new_alloc, new_arr + copied, arr_[copied]);
             }
         } catch (...) {
-            for (size_t old_i = 0; old_i < current_copied; ++old_i) {
-                AllocTraits::destroy(new_alloc, new_arr + old_i);
+            for (size_t i = 0; i < copied; ++i) {
+                AllocTraits::destroy(new_alloc, new_arr + i);
             }
 
             AllocTraits::deallocate(new_alloc, new_arr, other.sz_);
@@ -156,7 +176,14 @@ public:
         cap_ = other.cap_;
     }
 
-private:
+    size_t capacity() const {
+        return cap_;
+    }
+
+    size_t size() const {
+        return sz_;
+    }
+
     void reserve(size_t new_cap) {
         if (new_cap <= cap_)
             return;
@@ -166,7 +193,7 @@ private:
         // exception safety (ES): Ok if new throw an exception. All objects are valid
         // T* new_arr = reinterpret_cast<T*>(new char[new_cap * sizeof(T)]);
         T* new_arr = AllocTraits::allocate(alloc_, new_cap);
-        size_t current_copied = 0;
+        size_t copied = 0;
         try { 
             // UB explicit cast to T
             // for (size_t i = 0; i < sz_; ++i) {
@@ -176,15 +203,15 @@ private:
 
             // need to execute a ctor on raw memory
             // ES: T can throw an exception. It's bad. Need to delete all new objects
-            for (; current_copied < sz_; ++current_copied) {
+            for (; copied < sz_; ++copied) {
                 // new (new_arr + current_copied) T(arr_[current_copied]); 
-                AllocTraits::construct(alloc_, new_arr + current_copied, arr_[current_copied]);
+                AllocTraits::construct(alloc_, new_arr + copied, arr_[copied]);
             }
 
             // new (new_arr + sz) T(args)
             // std::is_trivially_copyable 
         } catch (...) {
-            for (size_t old_i = 0; old_i < current_copied; ++old_i) {
+            for (size_t old_i = 0; old_i < copied; ++old_i) {
                 AllocTraits::destroy(alloc_, new_arr + old_i);
             }
 
@@ -210,8 +237,4 @@ struct Debug {
 
 // Debug(v[5]); v - vector bool
 // vector<bool> is an example when rvalue can and must! be assigned to new value (28)
-int main()
-{
- 
-}
 
