@@ -26,8 +26,8 @@ struct allocator {
     }
 
     template <typename U, typename... Args>
-    void construct(U* ptr, const Args&... args) {
-        new (ptr) U(args...);
+    void construct(U* ptr, const Args&&... args) {
+        new (ptr) U(std::forward(args)...);
     }
 
     // for example list
@@ -129,14 +129,13 @@ public:
 
         AllocTraits::deallocate(alloc_, arr_, cap_);
     }
-
-    template <typename... Args>
-    void emplace_back(Args&&... args) {
+    // auto since C++20 
+    void emplace_back(auto&&... args) {
         if (sz_ == cap_) {
             reserve(cap_ > 0 ? cap_ * 2 : 1);
         }
 
-        AllocTraits::construct(alloc_, arr_ + sz_, std::forward<Args>(args)...);
+        AllocTraits::construct(alloc_, arr_ + sz_, std::forward<decltype(args)>(args)...);
         ++sz_;
     }
 
@@ -205,7 +204,8 @@ public:
             // ES: T can throw an exception. It's bad. Need to delete all new objects
             for (; copied < sz_; ++copied) {
                 // new (new_arr + current_copied) T(arr_[current_copied]); 
-                AllocTraits::construct(alloc_, new_arr + copied, arr_[copied]);
+                // move-ctor should be noexcept 
+                AllocTraits::construct(alloc_, new_arr + copied, std::move_if_noexcept([copied]));
             }
 
             // new (new_arr + sz) T(args)
@@ -230,10 +230,7 @@ public:
     }
 };
 
-template <typename T>
-struct Debug {
-    Debug(T) = delete;
-};
+
 
 // Debug(v[5]); v - vector bool
 // vector<bool> is an example when rvalue can and must! be assigned to new value (28)
