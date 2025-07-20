@@ -54,10 +54,96 @@ struct Example {
 };
 
 
+// METAAAA
+template <typename T>
+struct type_identity {
+    using type = T;
+};
+
+template <typename T>
+using type_identity_t = type_identity<T>::type;
+
+
+// integral_constant
+template <typename T, T v>
+struct integral_constant {
+    static constexpr T value = v;
+};
+
+template <bool b>
+using bool_constant = integral_constant<bool, b>;
+
+using true_type = bool_constant<true>;
+using false_type = bool_constant<false>;
+
+
+
+template <typename... Types>
+struct conjunction {
+    static constexpr bool value = (Types::value && ...);
+};
+
+template <typename... Types>
+constexpr bool conjunction_v = conjunction<Types...>::value;
+
+
+// SFINAE = Substitution Failture Is Not An Error!
+// works only for declarations!!!
+
+
+template <bool B, typename T = void>
+struct enable_if {};
+
+template <typename T>
+struct enable_if<true, T> {
+    using type = T;
+};
+
+template <bool B, typename T = void>
+using enable_if_t = enable_if<B, T>::type;
+
+
+template <typename T>
+enable_if_t<std::is_integral_v<T>, void> foo(T)
+{
+    std::cout << "Integral!\n";
+}
+
+template <typename T>
+enable_if_t<!std::is_integral_v<T>, void>  foo(T)
+{
+    std::cout << "Other!\n";
+}
+
+// Is class has some method
+
+namespace detail {
+    template <typename T, typename... Args>
+    std::true_type test( decltype(T().construct(Args()...))* );
+
+    std::false_type test(...);
+}
+template <typename T, typename... Args>
+struct has_method_construct : decltype(detail::test<T, Args...>(nullptr)) {};
+
+
+
+// Constraits and requirements (since c++20)
+template<typename T>
+requires std::is_integral_v<T> // && ... 
+void foo1(T) {
+    std::cout << "Integral!\n";
+}
+
+template<typename T>
+requires std::negation_v<std::is_integral<T>> // && ... 
+void foo1(T) {
+    std::cout << "Other!\n";
+}
+
+
 int main()
 {
-    const Example e{""};
-    e.get();
-    //e.get();
-
+    foo1(5);
+    foo1("fwefwef");
 }

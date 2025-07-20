@@ -3,23 +3,27 @@
 
 template <typename T, typename Deleter = std::default_delete<T>>
 class shared_ptr {
-    // Two way of construct:
-    // 1. Ctor:
+
+    // Two ways to construct:
+    // 1. ctor:
     //    T* -> T
     //    ctrlBlock_* -> ControlBlock
     //
     // 2. make_shared:
     //    T* -> T
     //    ctrlBlock_* -> nullptr
-    //    it means that counters lay befor T (ControlBlockWithObject)
+    //    it means that counters lay before T (ControlBlockWithObject)
     T* ptr_;
-    ControlBlock* ctrlBlock_;
+    ControlBlock* ctrl_block_;
 
     struct ControlBlock {
         size_t shared_count_;
         size_t weak_count_;
     };
 
+    // should be U because of T may not
+    // to point at the beggining of the object 
+    // std::static_pointer_cast
     struct ControlBlockWithObject : ControlBlock{
         T value_;
     };
@@ -32,7 +36,18 @@ class shared_ptr {
 
 
 public:
-    shared_ptr(T* ptr, Deleter del = std::default_delete<T>()) : ptr_(ptr), del_(del) {}
+    shared_ptr(T* ptr)
+            : ptr_(ptr), ctrl_block_(new ControlBlock(1, 0)) {
+        
+        if constexpr (std::is_base_of_v<T, enable_shared_from_this<T>>) {
+            ptr_->sptr_ = *this;
+        }
+    }
+    // TODO: create a shared_ptr from another type
+    // auto p = make_shared<Derived>();
+    // shared_ptr<Base> bp = p;
+
+
     ~shared_ptr() {
         del_(this->ptr_);
     }
@@ -49,9 +64,15 @@ shared_ptr<T> make_shared(Args&&...) {
 
 template <typename T>
 struct enable_shared_from_this {
+    weak_ptr<T> sptr_;
 
     enable_shared_from_this() {}
-    shared_ptr<T> shared_froom_this() const; 
+    shared_ptr<T> shared_from_this() const {
+        return sptr_.lock();
+    }
+
+    template <typename T>
+    friend class shared_ptr;
 
 };
 
