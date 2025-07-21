@@ -136,6 +136,7 @@ void foo1(T) {
 }
 
 template<typename T>
+// requires (N > 100)
 requires std::negation_v<std::is_integral<T>> // && ... 
 void foo1(T) {
     std::cout << "Other!\n";

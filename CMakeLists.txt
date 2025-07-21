@@ -4,26 +4,9 @@ project(fundametals)
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 include(project_configuration)
 
-add_executable(string_test main.cpp)
-target_link_libraries(string_test
-    PRIVATE
-        ProjectConfiguration
-)
-
-add_executable(test_oop oop.cpp)
-target_link_libraries(test_oop
-    PRIVATE
-        ProjectConfiguration
-)
-
-
-add_executable(vector vector.h 
-                      test_vector.cpp)
-target_link_libraries(vector
-    PRIVATE
-        ProjectConfiguration
-)
-
+add_project_executable(string)
+add_project_executable(oop)
+add_project_executable(vector)
 add_project_executable(polimorphism)
 add_project_executable(rtti)
 add_project_executable(stack_allocator)
