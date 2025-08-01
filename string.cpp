@@ -3,6 +3,8 @@
 #include <cstring>
 #include <ostream>
 
+
+// ADD UNION
 class string
 {
     using size_t = unsigned long long;
@@ -199,6 +201,7 @@ string operator""_s(const char * str, size_t)
 
 int main() {
 
+    
     string s;
     assert(s.size() == 0);
     assert(s.c_str() == nullptr);
