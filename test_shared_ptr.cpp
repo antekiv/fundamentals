@@ -29,7 +29,7 @@ SharedPtr<T> allocateShared(const Alloc& alloc, Args&&... args) {
 */
 
 
-/*
+
 struct Base {
     virtual ~Base() {}
 };
@@ -315,7 +315,7 @@ struct MyAllocator {
 
     T* allocate(size_t n) {
         ++allocate_called;
-        allocated += n * sizeof(T);;
+        allocated += n * sizeof(T);
         return (T*) ::operator new(n * sizeof(T), VerySpecialType());
     }
 
@@ -453,7 +453,7 @@ void test_make_allocate_shared() {
     destroy_called = 0;
  }
 
-/*struct Enabled: public EnableSharedFromThis<Enabled> {
+struct Enabled: public EnableSharedFromThis<Enabled> {
     SharedPtr<Enabled> get_shared() {
         return shared_from_this();
     }
@@ -482,8 +482,8 @@ void test_enable_shared_from_this() {
     assert(sp.use_count() == 1);
 
     sp.reset();
-}*/
-/*
+}
+
 int mother_created = 0;
 int mother_destroyed = 0;
 int son_created = 0;
@@ -660,9 +660,4 @@ int main() {
     assert((!std::is_base_of_v<std::weak_ptr<VerySpecialType>, WeakPtr<VerySpecialType>>));
  
     std::cout << 0;
-}
-    */
-
-int main() {
-
 }
