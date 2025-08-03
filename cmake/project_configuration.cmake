@@ -55,3 +55,13 @@ function(add_project_executable target_name)
             ProjectConfiguration23
     )
 endfunction()
+
+
+function(add_project_test_executable target_name)
+    add_executable("test_${target_name}" "test_${target_name}.cpp" ${target_name}.cpp)
+
+    target_link_libraries("test_${target_name}"
+        PRIVATE
+            ProjectConfiguration23
+    )
+endfunction()
