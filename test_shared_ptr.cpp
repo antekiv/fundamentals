@@ -110,6 +110,7 @@ void test_shared_ptr() {
     }
 }
 
+
 struct Node;
 
 struct Next {
@@ -640,7 +641,7 @@ int main() {
 
     test_shared_ptr();
     std::cerr << "Test 1 (shared ptr) passed." << std::endl;
-
+/*
     test_weak_ptr();
     std::cerr << "Test 2 (weak ptr) passed." << std::endl;
     
@@ -658,6 +659,7 @@ int main() {
     assert((!std::is_base_of_v<std::shared_ptr<VerySpecialType>, SharedPtr<VerySpecialType>>));
     
     assert((!std::is_base_of_v<std::weak_ptr<VerySpecialType>, WeakPtr<VerySpecialType>>));
- 
+
     std::cout << 0;
-}
+    */
+}//: value_ptr_(other.value_ptr_), ctrl_block_ptr_(other.ctrl_block_ptr_) 

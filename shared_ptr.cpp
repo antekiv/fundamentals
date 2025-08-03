@@ -34,6 +34,9 @@ class SharedPtr {
     template <typename Y, typename... Args>
     friend SharedPtr<Y> makeShared(Args&&...);
     
+    template <typename Y>
+    friend class WeakPtr;
+
 public:
     SharedPtr() {}
     SharedPtr(T* ptr)
@@ -43,21 +46,28 @@ public:
             value_ptr_->weak_ptr_ = *this;
         }
     }
-    template <typename Deleter>
-    SharedPtr(T* ptr, Deleter del)
+
+    template <typename Del>
+    SharedPtr(T* ptr, Del del)
             : value_ptr_(ptr), ctrl_block_ptr_(new Counter(1, 0)) {
         
         if constexpr (std::is_base_of_v<T, EnableSharedFromThis<T>>) {
             value_ptr_->weak_ptr_ = *this;
         }
     }
-    template <typename Deleter, typename Alloc>
-    SharedPtr(T* ptr, Deleter del, Alloc alloc)
+
+    template <typename Del, typename Alloc>
+    SharedPtr(T* ptr, Del del, Alloc alloc)
             : value_ptr_(ptr), ctrl_block_ptr_(new Counter(1, 0)) {
         
         if constexpr (std::is_base_of_v<T, EnableSharedFromThis<T>>) {
             value_ptr_->weak_ptr_ = *this;
         }
+    }
+
+    // Private
+    SharedPtr(Counter* ctrl_block_ptr) {
+        // TODO
     }
 
     SharedPtr(const SharedPtr& other)
@@ -66,8 +76,8 @@ public:
     }
     template <typename U>
     SharedPtr(const SharedPtr<U>& other)
-            : value_ptr_(other.value_ptr_), ctrl_block_ptr_(other.ctrl_block_ptr_) {
-        ++ctrl_block_ptr_->shared_count_;
+    {
+        //TODO
     }
 
     SharedPtr(SharedPtr&& other)
@@ -85,10 +95,7 @@ public:
     }
     template <typename U>
     SharedPtr& operator=(const SharedPtr<U>& other) {
-        if (this != &other) { 
-            
-            // TODO
-        }
+        // TODO
         return *this;
     }
 
@@ -100,9 +107,7 @@ public:
     }
     template <typename U>
     SharedPtr& operator=(const SharedPtr<U>&& other) {
-        if (this != &other) {    
-            // TODO
-        }
+        
         return *this;
     }
 
@@ -117,14 +122,13 @@ public:
         if (!ctrl_block_ptr_->shared_count_) {
             value_ptr_->~T();
             
-            if (value_ptr_ != (ctrl_block_ptr_ + sizeof(Counter))) {
+            if (value_ptr_ != reinterpret_cast<T*>(ctrl_block_ptr_ + sizeof(Counter))) {
                 // SharedPtr wasn't created using MakeShared()
                 delete value_ptr_;
             }
         }
 
         if (!ctrl_block_ptr_->weak_count_) {
-            ctrl_block_ptr_->SharedPtr<T>::~Counter();
             delete ctrl_block_ptr_;
         }
     }
@@ -142,6 +146,11 @@ public:
 
     // TODO: may be convertible to T
     void swap(SharedPtr& other) noexcept {
+        std::swap(this->value_ptr_, other.value_ptr_);
+        std::swap(this->ctrl_block_ptr_, other.ctrl_block_ptr_);
+    }
+    // rethink
+    void swap(SharedPtr&& other) noexcept {
         std::swap(this->value_ptr_, other.value_ptr_);
         std::swap(this->ctrl_block_ptr_, other.ctrl_block_ptr_);
     }
@@ -163,7 +172,7 @@ private:
 
 template <typename T, typename... Args>
 SharedPtr<T> makeShared(Args&&... args) {
-    auto* p = new SharedPtr<T>::CounterWithObject{T(std::forward<Args>(args)...), 1, 0};
+    auto* p = new SharedPtr<T>::CounterWithObject{1, 0, T(std::forward<Args>(args)...)};
     return SharedPtr<T>(p);
 }
 
@@ -186,14 +195,12 @@ public:
     }
 
     template <typename U>
-    WeakPtr(const WeakPtr<U>& weak_ptr)
-            : ctrl_block_ptr_(shared_ptr.ctrl_block_ptr_) {
+    WeakPtr(const WeakPtr<U>& weak_ptr) {
         // TODO
     }
 
     template <typename U>
-    WeakPtr(const SharedPtr<U>& shared_ptr)
-            : ctrl_block_ptr_(shared_ptr.ctrl_block_ptr_) {
+    WeakPtr(const SharedPtr<U>& shared_ptr) {
         // TODO
     }
 
@@ -202,7 +209,7 @@ public:
             && !(--ctrl_block_ptr_->weak_count_)
             &&    !ctrl_block_ptr_->shared_count_) { // if outlived shared_ptr
             
-            ctrl_block_ptr_->SharedPtr<T>::~Counter();
+            //ctrl_block_ptr_->SharedPtr<T>::~Counter();
             delete ctrl_block_ptr_;
         }
     }
@@ -216,7 +223,8 @@ public:
     SharedPtr<T> lock() const {
         return expired()
             ? SharedPtr<T>()
-            : SharedPtr<T>(*this);
+            // TODO: from *this
+            : SharedPtr<T>(this->ctrl_block_ptr_);
     }
 
     size_t use_count() const noexcept {
@@ -224,6 +232,9 @@ public:
             ? ctrl_block_ptr_->weak_count_
             : 0;
     }
+
+    template <typename Y, typename Deleter>
+    friend class SharedPtr;
 };
 
 template <typename T>
