@@ -10,15 +10,15 @@ class SharedPtr {
     // Two ways to construct:
     // 1. ctor:
     //    T* -> T
-    //    ctrlBlock_* -> ControlBlock
+    //    ctrlBlock_* -> Counter
     //
     // 2. make_shared:
     //    T* -> T
-    //    ctrlBlock_* -> nullptr
-    //    it means that counters lay before T (ControlBlockWithObject)
+    //    ctrlBlock_* -> CounterWithObject
+    //    it means that counters lay before T (CounterWithObject)
     struct Counter {
-        size_t shared_count_;
-        size_t weak_count_;
+        size_t shared_count_ = 0;
+        size_t weak_count_ = 0;
     };
 
     // should be U because of T may not
@@ -38,8 +38,7 @@ class SharedPtr {
     friend class WeakPtr;
 
 public:
-    SharedPtr() {}
-    SharedPtr(T* ptr)
+    SharedPtr(T* ptr = nullptr)
             : value_ptr_(ptr), ctrl_block_ptr_(new Counter(1, 0)) {
         
         if constexpr (std::is_base_of_v<T, EnableSharedFromThis<T>>) {
@@ -72,7 +71,7 @@ public:
 
     SharedPtr(const SharedPtr& other)
             : value_ptr_(other.value_ptr_), ctrl_block_ptr_(other.ctrl_block_ptr_) {
-        ++ctrl_block_ptr_->shared_count_;
+        ++(ctrl_block_ptr_->shared_count_);
     }
     template <typename U>
     SharedPtr(const SharedPtr<U>& other)
@@ -81,7 +80,9 @@ public:
     }
 
     SharedPtr(SharedPtr&& other)
-            : value_ptr_(std::move(other.value_ptr_)), ctrl_block_ptr_(std::move(other.ctrl_block_ptr_)) { }
+            : value_ptr_(std::move(other.value_ptr_)), ctrl_block_ptr_(std::move(other.ctrl_block_ptr_)) {
+        ++(ctrl_block_ptr_->shared_count_);
+    }
     template <typename U>
     SharedPtr(SharedPtr<U>&& other)
             : value_ptr_(std::move(other.value_ptr_)), ctrl_block_ptr_(std::move(other.ctrl_block_ptr_)) { }
@@ -99,9 +100,9 @@ public:
         return *this;
     }
 
-    SharedPtr& operator=(const SharedPtr&& other) {
-        if (this != &other) {    
-            // TODO
+    SharedPtr& operator=(SharedPtr&& other) noexcept {
+        if (this != &other) {
+            std::move(other).swap(*this);
         }
         return *this;
     }
@@ -117,30 +118,32 @@ public:
 
 
     ~SharedPtr() {
-        --ctrl_block_ptr_->shared_count_;
+        if (--ctrl_block_ptr_->shared_count_)
+            return;
         
-        if (!ctrl_block_ptr_->shared_count_) {
-            value_ptr_->~T();
-            
-            if (value_ptr_ != reinterpret_cast<T*>(ctrl_block_ptr_ + sizeof(Counter))) {
-                // SharedPtr wasn't created using MakeShared()
-                delete value_ptr_;
-            }
-        }
-
         if (!ctrl_block_ptr_->weak_count_) {
+            if constexpr (!std::is_base_of_v<T, EnableSharedFromThis<T>>) {
+                if (value_ptr_)
+                    value_ptr_->~T();
+                operator delete(value_ptr_);
+            }
+                
             delete ctrl_block_ptr_;
+        } else {
+            if (value_ptr_)
+                value_ptr_->~T();
         }
     }
 
     T& operator*() const noexcept {
-        return *value_ptr_;
+        return *get();
     }
     T* operator->() const noexcept {
-        return value_ptr_;
+        return get();
     }
 
     size_t use_count() const noexcept {
+        std::cout << "SharedPtr::count: " << ctrl_block_ptr_->shared_count_ << std::endl;
         return ctrl_block_ptr_->shared_count_;
     }
 

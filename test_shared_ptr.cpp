@@ -83,6 +83,7 @@ void test_shared_ptr() {
     second_ptr.reset();
     SharedPtr<vector<int>>().swap(first_ptr);
 
+    std::cout << "1" <<std::endl;
     assert(second_ptr.get() == nullptr);
     assert(second_ptr.get() == nullptr);
 
@@ -93,6 +94,7 @@ void test_shared_ptr() {
             ptrs.push_back(SharedPtr<int>(p));
         }
         std::sort(ptrs.begin(), ptrs.end(), [](auto&& x, auto&& y){return *x < *y;});
+
         for (int i = 0; i + 1 < 100'000; ++i) {
             assert(*(ptrs[i]) <= *(ptrs[i+1]));
         }
