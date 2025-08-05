@@ -195,6 +195,7 @@ void test_weak_ptr() {
     sp.reset();
 
     unsigned int useless_value = 0;
+    
     for (int i = 0; i < 100'000; ++i) {
         SharedPtr<Node> head = getCyclePtr(8);
         SharedPtr<Node> nextHead = head->next.shared;
@@ -204,13 +205,15 @@ void test_weak_ptr() {
         head.reset();
         assert(nextHead.use_count() == 1);
     }
+    
     std::ignore = useless_value;
 
     assert(Node::constructed == 800'000);
     assert(Node::destructed == 800'000);
-
+    
     // test inheritance
     {
+        /*
         SharedPtr<Derived> dsp(new Derived());
 
         SharedPtr<Base> bsp = dsp;
@@ -228,8 +231,9 @@ void test_weak_ptr() {
         assert(wdsp.expired());
         assert(wbsp.expired());
         assert(wwbsp.expired());
+        */
     }
-
+    std::cout << "const test\n";
     // test const
     {
         SharedPtr<int> sp(new int(42));
@@ -643,10 +647,10 @@ int main() {
 
     test_shared_ptr();
     std::cerr << "Test 1 (shared ptr) passed." << std::endl;
-/*
+
     test_weak_ptr();
     std::cerr << "Test 2 (weak ptr) passed." << std::endl;
-    
+/*    
     test_make_allocate_shared();
     std::cerr << "Test 3 (make/allocate shared) passed." << std::endl;
     
@@ -664,4 +668,5 @@ int main() {
 
     std::cout << 0;
     */
+
 }//: value_ptr_(other.value_ptr_), ctrl_block_ptr_(other.ctrl_block_ptr_) 

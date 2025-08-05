@@ -4,32 +4,34 @@
 template <typename T>
 struct EnableSharedFromThis;
 
+// TODO: add to all a delegate c-tor
 template <typename T, typename Deleter = std::default_delete<T>>
 class SharedPtr {
 
     // Two ways to construct:
     // 1. ctor:
     //    T* -> T
-    //    ctrlBlock_* -> Counter
+    //    ctrlBlock_* -> CtrlBlock
     //
     // 2. make_shared:
     //    T* -> T
-    //    ctrlBlock_* -> CounterWithObject
-    //    it means that counters lay before T (CounterWithObject)
-    struct Counter {
+    //    ctrlBlock_* -> CtrlBlockWithObject
+    //    it means that counters lay before T (CtrlBlockWithObject)
+    struct CtrlBlock {
         size_t shared_count_ = 0;
-        size_t weak_count_ = 0;
+        size_t weak_count_   = 0;
+        T*     value_ptr_    = nullptr;
     };
 
     // should be U because of T may not
     // to point at the beggining of the object 
     // std::static_pointer_cast
-    struct CounterWithObject : Counter{
+    struct CtrlBlockWithObject : CtrlBlock{
         T value_;
     };
 
     T* value_ptr_ = nullptr;
-    Counter* ctrl_block_ptr_ = nullptr;
+    CtrlBlock* ctrl_block_ptr_ = nullptr;
  
     template <typename Y, typename... Args>
     friend SharedPtr<Y> makeShared(Args&&...);
@@ -39,59 +41,44 @@ class SharedPtr {
 
 public:
     SharedPtr(T* ptr = nullptr)
-            : value_ptr_(ptr), ctrl_block_ptr_(new Counter(1, 0)) {
-        
-        if constexpr (std::is_base_of_v<T, EnableSharedFromThis<T>>) {
-            value_ptr_->weak_ptr_ = *this;
-        }
-    }
+            : value_ptr_(ptr)
+            , ctrl_block_ptr_(new CtrlBlock(1, 0, ptr)) {}
 
     template <typename Del>
     SharedPtr(T* ptr, Del del)
-            : value_ptr_(ptr), ctrl_block_ptr_(new Counter(1, 0)) {
-        
-        if constexpr (std::is_base_of_v<T, EnableSharedFromThis<T>>) {
-            value_ptr_->weak_ptr_ = *this;
-        }
-    }
+            : value_ptr_(ptr), ctrl_block_ptr_(new CtrlBlock(1, 0, ptr)) {}
 
     template <typename Del, typename Alloc>
     SharedPtr(T* ptr, Del del, Alloc alloc)
-            : value_ptr_(ptr), ctrl_block_ptr_(new Counter(1, 0)) {
-        
-        if constexpr (std::is_base_of_v<T, EnableSharedFromThis<T>>) {
-            value_ptr_->weak_ptr_ = *this;
-        }
-    }
+            : value_ptr_(ptr)
+            , ctrl_block_ptr_(new CtrlBlock(1, 0, ptr)) {}
 
-    // Private
-    SharedPtr(Counter* ctrl_block_ptr) {
-        // TODO
-    }
-
-    SharedPtr(const SharedPtr& other)
-            : value_ptr_(other.value_ptr_), ctrl_block_ptr_(other.ctrl_block_ptr_) {
+    SharedPtr(const SharedPtr& other) noexcept
+            : value_ptr_(other.value_ptr_)
+            , ctrl_block_ptr_(other.ctrl_block_ptr_) {
         ++(ctrl_block_ptr_->shared_count_);
     }
+    SharedPtr(SharedPtr&& other) noexcept
+            : value_ptr_(other.value_ptr_)
+            , ctrl_block_ptr_(other.ctrl_block_ptr_) {
+        other.value_ptr_ = nullptr;
+        other.ctrl_block_ptr_ = new CtrlBlock(1, 0, nullptr);
+    }
+
     template <typename U>
-    SharedPtr(const SharedPtr<U>& other)
-    {
+    SharedPtr(const SharedPtr<U>& other) {
         //TODO
     }
 
-    SharedPtr(SharedPtr&& other)
-            : value_ptr_(std::move(other.value_ptr_)), ctrl_block_ptr_(std::move(other.ctrl_block_ptr_)) {
-        ++(ctrl_block_ptr_->shared_count_);
-    }
+    // REDO
     template <typename U>
     SharedPtr(SharedPtr<U>&& other)
-            : value_ptr_(std::move(other.value_ptr_)), ctrl_block_ptr_(std::move(other.ctrl_block_ptr_)) { }
+            : value_ptr_(std::move(other.value_ptr_))
+            , ctrl_block_ptr_(std::move(other.ctrl_block_ptr_)) { }
 
     SharedPtr& operator=(const SharedPtr& other) {
-        if (this != &other) { 
-            
-            // TODO
-        }
+        if (this != &other)
+            swap(SharedPtr(other));
         return *this;
     }
     template <typename U>
@@ -101,11 +88,11 @@ public:
     }
 
     SharedPtr& operator=(SharedPtr&& other) noexcept {
-        if (this != &other) {
-            std::move(other).swap(*this);
-        }
+        if (this != &other)
+            swap(SharedPtr(std::move(other)));
         return *this;
     }
+
     template <typename U>
     SharedPtr& operator=(const SharedPtr<U>&& other) {
         
@@ -123,15 +110,12 @@ public:
         
         if (!ctrl_block_ptr_->weak_count_) {
             if constexpr (!std::is_base_of_v<T, EnableSharedFromThis<T>>) {
-                if (value_ptr_)
-                    value_ptr_->~T();
-                operator delete(value_ptr_);
+                delete value_ptr_;
             }
                 
             delete ctrl_block_ptr_;
         } else {
-            if (value_ptr_)
-                value_ptr_->~T();
+            delete value_ptr_;
         }
     }
 
@@ -143,22 +127,21 @@ public:
     }
 
     size_t use_count() const noexcept {
-        std::cout << "SharedPtr::count: " << ctrl_block_ptr_->shared_count_ << std::endl;
         return ctrl_block_ptr_->shared_count_;
     }
 
     // TODO: may be convertible to T
-    void swap(SharedPtr& other) noexcept {
+    void swap(SharedPtr& other) {
         std::swap(this->value_ptr_, other.value_ptr_);
         std::swap(this->ctrl_block_ptr_, other.ctrl_block_ptr_);
     }
     // rethink
-    void swap(SharedPtr&& other) noexcept {
+    void swap(SharedPtr&& other){
         std::swap(this->value_ptr_, other.value_ptr_);
         std::swap(this->ctrl_block_ptr_, other.ctrl_block_ptr_);
     }
 
-    void reset(T* ptr = nullptr) {
+    void reset(T* ptr = nullptr) noexcept {
         swap(SharedPtr(ptr));
     }
 
@@ -168,14 +151,17 @@ public:
 
 private:
     // TODO:
-    SharedPtr(CounterWithObject* cp)
-            : value_ptr_(&(cp->value_))
-            , ctrl_block_ptr_(cp) { }
+    SharedPtr(CtrlBlock* ctrl_block_ptr) 
+            : value_ptr_(ctrl_block_ptr->value_ptr_)
+            , ctrl_block_ptr_(ctrl_block_ptr) {
+        ++ctrl_block_ptr_->shared_count_;
+    }
 };
 
 template <typename T, typename... Args>
 SharedPtr<T> makeShared(Args&&... args) {
-    auto* p = new SharedPtr<T>::CounterWithObject{1, 0, T(std::forward<Args>(args)...)};
+    auto* p = new SharedPtr<T>::CtrlBlockWithObject{1, 0, nullptr, T(std::forward<Args>(args)...)};
+    p->value_ptr_ = &p->value_;
     return SharedPtr<T>(p);
 }
 
@@ -185,16 +171,30 @@ SharedPtr<T> allocateShared(const Alloc& alloc, Args&&... args) {
 }
 
 
+
 // weak_ptr, enable_shared_from_this. CRTP
 template <typename T>
 class WeakPtr {
-    SharedPtr<T>::Counter* ctrl_block_ptr_ = nullptr;
+    SharedPtr<T>::CtrlBlock* ctrl_block_ptr_;
 public:
-    WeakPtr() : ctrl_block_ptr_(nullptr) { }
-    WeakPtr(const SharedPtr<T>& shared_ptr)
+    WeakPtr(const SharedPtr<T>& shared_ptr = SharedPtr<T>())
             : ctrl_block_ptr_(shared_ptr.ctrl_block_ptr_) {
-        if (ctrl_block_ptr_)
-            ++(ctrl_block_ptr_->weak_count_);
+        ++(ctrl_block_ptr_->weak_count_);
+    }
+    WeakPtr(const WeakPtr<T>& other)
+            : ctrl_block_ptr_(other.ctrl_block_ptr_) {
+        ++(ctrl_block_ptr_->weak_count_);
+    }
+    WeakPtr(WeakPtr<T>&& other)
+            : ctrl_block_ptr_(other.ctrl_block_ptr_) {
+        // Hmm... maybe need to add checking nullptr for ctrl_block
+        other.ctrl_block_ptr_ = new SharedPtr<T>::CtrlBlock(0, 1, nullptr); 
+    }
+
+    WeakPtr& operator=(const SharedPtr<T>& shared_ptr) {
+        WeakPtr<T> temp = shared_ptr;
+        swap(std::move(temp));
+        return *this;
     }
 
     template <typename U>
@@ -208,37 +208,39 @@ public:
     }
 
     ~WeakPtr() {
-        if (       ctrl_block_ptr_ 
-            && !(--ctrl_block_ptr_->weak_count_)
-            &&    !ctrl_block_ptr_->shared_count_) { // if outlived shared_ptr
-            
-            //ctrl_block_ptr_->SharedPtr<T>::~Counter();
-            delete ctrl_block_ptr_;
-        }
+        if (--ctrl_block_ptr_->weak_count_)
+            return;
+
+        if (ctrl_block_ptr_->shared_count_)
+            return;
+
+        delete ctrl_block_ptr_;
     }
 
     
-    bool expired() const {
-        return !ctrl_block_ptr_;
+    bool expired() const noexcept {
+        return !use_count();
     }
 
-    // TODO:
-    SharedPtr<T> lock() const {
+    SharedPtr<T> lock() const noexcept{
         return expired()
             ? SharedPtr<T>()
-            // TODO: from *this
             : SharedPtr<T>(this->ctrl_block_ptr_);
     }
 
     size_t use_count() const noexcept {
-        return ctrl_block_ptr_
-            ? ctrl_block_ptr_->weak_count_
-            : 0;
+        return ctrl_block_ptr_->shared_count_;
+    }
+
+    void swap(WeakPtr&& other) {
+        std::swap(this->ctrl_block_ptr_, other.ctrl_block_ptr_);
     }
 
     template <typename Y, typename Deleter>
     friend class SharedPtr;
 };
+
+
 
 template <typename T>
 class EnableSharedFromThis {
