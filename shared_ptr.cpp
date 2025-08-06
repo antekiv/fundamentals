@@ -74,12 +74,6 @@ public:
         other.ctrl_block_ptr_ = new CtrlBlock<T>({1, 0}, nullptr);
     }
 
-    SharedPtr& operator=(const SharedPtr& other) {
-        if (this != &other)
-            swap(SharedPtr(other));
-        return *this;
-    }
-
     template <typename U>
     requires std::is_convertible_v<U*, T*>
     SharedPtr(const SharedPtr<U>& other)
@@ -88,13 +82,24 @@ public:
         ++(ctrl_block_ptr_->shared_count_);
     }
 
-
+    /*
     template <typename U>
-    SharedPtr& operator=(const SharedPtr<U>& other) {
-        // TODO
+    requires std::is_convertible_v<U*, T*>
+    SharedPtr(SharedPtr<U>&& other)
+            : value_ptr_(static_cast<T*>(other.value_ptr_))
+            , ctrl_block_ptr_(reinterpret_cast<CtrlBlock<T>*>(other.ctrl_block_ptr_)) {
+        other.value_ptr_ = nullptr;
+        other.ctrl_block_ptr_ = new CtrlBlock<U>({1, 0}, nullptr);
+    }
+    */
+
+    SharedPtr& operator=(const SharedPtr& other) {
+        if (this != &other)
+            swap(SharedPtr(other));
         return *this;
     }
 
+    
     SharedPtr& operator=(SharedPtr&& other) noexcept {
         if (this != &other)
             swap(SharedPtr(std::move(other)));
@@ -102,15 +107,16 @@ public:
     }
 
     template <typename U>
-    SharedPtr& operator=(const SharedPtr<U>&& other) {
+    requires std::is_convertible_v<U*, T*>
+    SharedPtr& operator=(SharedPtr<U>&& other) noexcept {
+        std::cout << value_ptr_ << " --> " << reinterpret_cast<T*>(other.value_ptr_) << std::endl;
         
+        value_ptr_ = static_cast<T*>(other.value_ptr_);
+        ctrl_block_ptr_ = reinterpret_cast<CtrlBlock<T>*>(other.ctrl_block_ptr_);
+
+        other.swap(SharedPtr<U>());
         return *this;
     }
-
-    // TODO: create a SharedPtr from another type
-    // auto p = make_shared<Derived>();
-    // SharedPtr<Base> bp = p;
-
 
     ~SharedPtr() {
         if (--ctrl_block_ptr_->shared_count_)
@@ -149,6 +155,12 @@ public:
         std::swap(this->ctrl_block_ptr_, other.ctrl_block_ptr_);
     }
 
+    template <typename U>
+    void swap(SharedPtr<U>&& other){
+        std::swap(this->value_ptr_, other.value_ptr_);
+        std::swap(this->ctrl_block_ptr_, other.ctrl_block_ptr_);
+    }
+
     void reset(T* ptr = nullptr) noexcept {
         swap(SharedPtr(ptr));
     }
@@ -158,7 +170,6 @@ public:
     }
 
 private:
-    // TODO:
     SharedPtr(CtrlBlock<T>* ctrl_block_ptr) 
             : value_ptr_(ctrl_block_ptr->value_ptr_)
             , ctrl_block_ptr_(ctrl_block_ptr) {
@@ -198,9 +209,16 @@ public:
             : ctrl_block_ptr_(other.ctrl_block_ptr_) {
         ++(ctrl_block_ptr_->weak_count_);
     }
+
     template <typename U>
     requires std::is_convertible_v<U*, T*>
     WeakPtr(const WeakPtr<U>& other)
+            : ctrl_block_ptr_(reinterpret_cast<InnerCtrlBlock*>(other.ctrl_block_ptr_)) {
+        ++(ctrl_block_ptr_->weak_count_);
+    }
+    template <typename U>
+    requires std::is_convertible_v<U*, T*>
+    WeakPtr(const SharedPtr<U>& other)
             : ctrl_block_ptr_(reinterpret_cast<InnerCtrlBlock*>(other.ctrl_block_ptr_)) {
         ++(ctrl_block_ptr_->weak_count_);
     }
