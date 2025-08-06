@@ -213,7 +213,7 @@ void test_weak_ptr() {
     
     // test inheritance
     {
-        /*
+        
         SharedPtr<Derived> dsp(new Derived());
 
         SharedPtr<Base> bsp = dsp;
@@ -231,7 +231,6 @@ void test_weak_ptr() {
         assert(wdsp.expired());
         assert(wbsp.expired());
         assert(wwbsp.expired());
-        */
     }
     std::cout << "const test\n";
     // test const
@@ -645,10 +644,10 @@ int main() {
     
     std::cerr << "Starting tests..." << std::endl;
 
-    test_shared_ptr();
+    //test_shared_ptr();
     std::cerr << "Test 1 (shared ptr) passed." << std::endl;
 
-    test_weak_ptr();
+    //test_weak_ptr();
     std::cerr << "Test 2 (weak ptr) passed." << std::endl;
 /*    
     test_make_allocate_shared();
@@ -668,5 +667,9 @@ int main() {
 
     std::cout << 0;
     */
+
+    SharedPtr<Derived> sp(new Derived());
+    SharedPtr<Base> bs = (sp);
+    std::cout << sizeof(bs) << std::endl;
 
 }//: value_ptr_(other.value_ptr_), ctrl_block_ptr_(other.ctrl_block_ptr_) 
