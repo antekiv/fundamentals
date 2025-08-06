@@ -36,7 +36,7 @@ class SharedPtr {
         U value_;
     };
 
-    T* value_ptr_ = nullptr;
+    T* value_ptr_                 = nullptr;
     CtrlBlock<T>* ctrl_block_ptr_ = nullptr;
  
     template <typename Y, typename... Args>
@@ -82,17 +82,6 @@ public:
         ++(ctrl_block_ptr_->shared_count_);
     }
 
-    /*
-    template <typename U>
-    requires std::is_convertible_v<U*, T*>
-    SharedPtr(SharedPtr<U>&& other)
-            : value_ptr_(static_cast<T*>(other.value_ptr_))
-            , ctrl_block_ptr_(reinterpret_cast<CtrlBlock<T>*>(other.ctrl_block_ptr_)) {
-        other.value_ptr_ = nullptr;
-        other.ctrl_block_ptr_ = new CtrlBlock<U>({1, 0}, nullptr);
-    }
-    */
-
     SharedPtr& operator=(const SharedPtr& other) {
         if (this != &other)
             swap(SharedPtr(other));
@@ -109,8 +98,6 @@ public:
     template <typename U>
     requires std::is_convertible_v<U*, T*>
     SharedPtr& operator=(SharedPtr<U>&& other) noexcept {
-        std::cout << value_ptr_ << " --> " << reinterpret_cast<T*>(other.value_ptr_) << std::endl;
-        
         value_ptr_ = static_cast<T*>(other.value_ptr_);
         ctrl_block_ptr_ = reinterpret_cast<CtrlBlock<T>*>(other.ctrl_block_ptr_);
 
@@ -122,15 +109,21 @@ public:
         if (--ctrl_block_ptr_->shared_count_)
             return;
         
-        if (!ctrl_block_ptr_->weak_count_) {
-            if constexpr (!std::is_base_of_v<T, EnableSharedFromThis<T>>) {
-                delete value_ptr_;
-            }
-                
-            delete ctrl_block_ptr_;
-        } else {
-            delete value_ptr_;
+        if (value_ptr_)
+            value_ptr_->~T();
+        
+        if (reinterpret_cast<char*>(value_ptr_) - reinterpret_cast<char*>(ctrl_block_ptr_) != sizeof(CtrlBlock<T>)) {
+            // was not created using makeShared
+            operator delete(value_ptr_);
         }
+
+        if (ctrl_block_ptr_->weak_count_ == 0) {      
+            
+            if (ctrl_block_ptr_)
+                ctrl_block_ptr_->~CtrlBlock();
+
+            operator delete(ctrl_block_ptr_);
+        } 
     }
 
     T& operator*() const noexcept {
@@ -149,14 +142,7 @@ public:
         std::swap(this->value_ptr_, other.value_ptr_);
         std::swap(this->ctrl_block_ptr_, other.ctrl_block_ptr_);
     }
-    // rethink
     void swap(SharedPtr&& other){
-        std::swap(this->value_ptr_, other.value_ptr_);
-        std::swap(this->ctrl_block_ptr_, other.ctrl_block_ptr_);
-    }
-
-    template <typename U>
-    void swap(SharedPtr<U>&& other){
         std::swap(this->value_ptr_, other.value_ptr_);
         std::swap(this->ctrl_block_ptr_, other.ctrl_block_ptr_);
     }
@@ -170,6 +156,12 @@ public:
     }
 
 private:
+    SharedPtr(CtrlBlockWithObject<T>* ctrl_block_with_object_ptr) 
+            : value_ptr_(ctrl_block_with_object_ptr->value_ptr_)
+            , ctrl_block_ptr_(ctrl_block_with_object_ptr) {
+        ++ctrl_block_ptr_->shared_count_;
+    }
+
     SharedPtr(CtrlBlock<T>* ctrl_block_ptr) 
             : value_ptr_(ctrl_block_ptr->value_ptr_)
             , ctrl_block_ptr_(ctrl_block_ptr) {
@@ -179,7 +171,7 @@ private:
 
 template <typename T, typename... Args>
 SharedPtr<T> makeShared(Args&&... args) {
-    auto* p = new SharedPtr<T>::template CtrlBlockWithObject<T>{1, 0, nullptr, T(std::forward<Args>(args)...)};
+    auto* p = new SharedPtr<T>::template CtrlBlockWithObject<T>{0, 0, nullptr, T(std::forward<Args>(args)...)};
     p->value_ptr_ = &p->value_;
     return SharedPtr<T>(p);
 }
@@ -188,7 +180,6 @@ template<typename T, typename Alloc, typename... Args>
 SharedPtr<T> allocateShared(const Alloc& alloc, Args&&... args) {
     return SharedPtr<T>();
 }
-
 
 
 // weak_ptr, enable_shared_from_this. CRTP
@@ -247,7 +238,7 @@ public:
         if (ctrl_block_ptr_->shared_count_)
             return;
 
-        delete ctrl_block_ptr_;
+        operator delete(ctrl_block_ptr_);
     }
 
     

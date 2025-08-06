@@ -83,7 +83,6 @@ void test_shared_ptr() {
     second_ptr.reset();
     SharedPtr<vector<int>>().swap(first_ptr);
 
-    std::cout << "1" <<std::endl;
     assert(second_ptr.get() == nullptr);
     assert(second_ptr.get() == nullptr);
 
@@ -232,7 +231,6 @@ void test_weak_ptr() {
         assert(wbsp.expired());
         assert(wwbsp.expired());
     }
-    std::cout << "const test\n";
     // test const
     {
         SharedPtr<int> sp(new int(42));
@@ -378,6 +376,7 @@ void test_make_allocate_shared() {
         Accountant::destructed = 0;
     }
 
+    std::cout << "new_called: " << new_called << std::endl;
     assert(new_called == 2);
     assert(delete_called == 2);
 
@@ -649,11 +648,11 @@ int main() {
 
     test_weak_ptr();
     std::cerr << "Test 2 (weak ptr) passed." << std::endl;
-/*    
+
     test_make_allocate_shared();
     std::cerr << "Test 3 (make/allocate shared) passed." << std::endl;
-    
-    //test_enable_shared_from_this();
+/*    
+    test_enable_shared_from_this();
     
     test_inheritance_destroy();    
     std::cerr << "Test 4 (inheritance) passed." << std::endl;
