@@ -27,12 +27,8 @@ class SharedPtr {
         U*     value_ptr_    = nullptr;
     };
 
-    // should be U because of T may not
-    // to point at the beggining of the object 
-    // std::static_pointer_cast
     template <typename U>
-    struct CtrlBlockWithObject : CtrlBlock<U>{
-
+    struct CtrlBlockWithObject : CtrlBlock<U> {
         U value_;
     };
 
@@ -49,13 +45,18 @@ class SharedPtr {
     friend class SharedPtr;
 
 public:
-    SharedPtr(T* ptr = nullptr)
+    SharedPtr()
+            : value_ptr_(nullptr)
+            , ctrl_block_ptr_(nullptr) {}
+
+    SharedPtr(T* ptr)
             : value_ptr_(ptr)
             , ctrl_block_ptr_(new CtrlBlock({1, 0}, ptr)) {}
 
     template <typename Del>
     SharedPtr(T* ptr, Del del)
-            : value_ptr_(ptr), ctrl_block_ptr_(new CtrlBlock({1, 0}, ptr)) {}
+            : value_ptr_(ptr)
+            , ctrl_block_ptr_(new CtrlBlock({1, 0}, ptr)) {}
 
     template <typename Del, typename Alloc>
     SharedPtr(T* ptr, Del del, Alloc alloc)
@@ -65,13 +66,14 @@ public:
     SharedPtr(const SharedPtr& other) noexcept
             : value_ptr_(other.value_ptr_)
             , ctrl_block_ptr_(other.ctrl_block_ptr_) {
-        ++(ctrl_block_ptr_->shared_count_);
+        if (ctrl_block_ptr_)
+            ++(ctrl_block_ptr_->shared_count_);
     }
     SharedPtr(SharedPtr&& other) noexcept
             : value_ptr_(other.value_ptr_)
             , ctrl_block_ptr_(other.ctrl_block_ptr_) {
         other.value_ptr_ = nullptr;
-        other.ctrl_block_ptr_ = new CtrlBlock<T>({1, 0}, nullptr);
+        other.ctrl_block_ptr_ = nullptr;
     }
 
     template <typename U>
@@ -79,15 +81,16 @@ public:
     SharedPtr(const SharedPtr<U>& other)
             : value_ptr_(static_cast<T*>(other.value_ptr_))
             , ctrl_block_ptr_(reinterpret_cast<CtrlBlock<T>*>(other.ctrl_block_ptr_)) {
-        ++(ctrl_block_ptr_->shared_count_);
+        if (ctrl_block_ptr_)
+            ++(ctrl_block_ptr_->shared_count_);
     }
 
     SharedPtr& operator=(const SharedPtr& other) {
+        // check T == other.T
         if (this != &other)
             swap(SharedPtr(other));
         return *this;
     }
-
     
     SharedPtr& operator=(SharedPtr&& other) noexcept {
         if (this != &other)
@@ -98,16 +101,23 @@ public:
     template <typename U>
     requires std::is_convertible_v<U*, T*>
     SharedPtr& operator=(SharedPtr<U>&& other) noexcept {
+        swap(SharedPtr());
+
         value_ptr_ = static_cast<T*>(other.value_ptr_);
         ctrl_block_ptr_ = reinterpret_cast<CtrlBlock<T>*>(other.ctrl_block_ptr_);
 
-        other.swap(SharedPtr<U>());
+        other.value_ptr_ = nullptr;
+        other.ctrl_block_ptr_ = nullptr;
+
         return *this;
     }
 
     ~SharedPtr() {
-        if (--ctrl_block_ptr_->shared_count_)
+        if (    !ctrl_block_ptr_ 
+            || --ctrl_block_ptr_->shared_count_) {
+            
             return;
+        }
         
         if (value_ptr_)
             value_ptr_->~T();
@@ -139,15 +149,19 @@ public:
 
     // TODO: may be convertible to T
     void swap(SharedPtr& other) {
-        std::swap(this->value_ptr_, other.value_ptr_);
-        std::swap(this->ctrl_block_ptr_, other.ctrl_block_ptr_);
+        std::swap(value_ptr_, other.value_ptr_);
+        std::swap(ctrl_block_ptr_, other.ctrl_block_ptr_);
     }
-    void swap(SharedPtr&& other){
-        std::swap(this->value_ptr_, other.value_ptr_);
-        std::swap(this->ctrl_block_ptr_, other.ctrl_block_ptr_);
+    // rethink
+    void swap(SharedPtr&& other) {
+        std::swap(value_ptr_, other.value_ptr_);
+        std::swap(ctrl_block_ptr_, other.ctrl_block_ptr_);
     }
 
-    void reset(T* ptr = nullptr) noexcept {
+    void reset() noexcept {
+        swap(SharedPtr());
+    }
+    void reset(T* ptr) noexcept {
         swap(SharedPtr(ptr));
     }
 
@@ -165,7 +179,8 @@ private:
     SharedPtr(CtrlBlock<T>* ctrl_block_ptr) 
             : value_ptr_(ctrl_block_ptr->value_ptr_)
             , ctrl_block_ptr_(ctrl_block_ptr) {
-        ++ctrl_block_ptr_->shared_count_;
+        if (ctrl_block_ptr)
+            ++ctrl_block_ptr_->shared_count_;
     }
 };
 
@@ -191,33 +206,38 @@ class WeakPtr {
 
     template <typename U>
     friend class WeakPtr;
+    template <typename U, typename Deleter>
+    friend class SharedPtr;
 public:
     WeakPtr(const SharedPtr<T>& shared_ptr = SharedPtr<T>())
             : ctrl_block_ptr_(shared_ptr.ctrl_block_ptr_) {
-        ++(ctrl_block_ptr_->weak_count_);
+        if (ctrl_block_ptr_)
+            ++(ctrl_block_ptr_->weak_count_);
     }
     WeakPtr(const WeakPtr<T>& other)
             : ctrl_block_ptr_(other.ctrl_block_ptr_) {
-        ++(ctrl_block_ptr_->weak_count_);
+        if (ctrl_block_ptr_)
+            ++(ctrl_block_ptr_->weak_count_);
     }
 
     template <typename U>
     requires std::is_convertible_v<U*, T*>
     WeakPtr(const WeakPtr<U>& other)
             : ctrl_block_ptr_(reinterpret_cast<InnerCtrlBlock*>(other.ctrl_block_ptr_)) {
-        ++(ctrl_block_ptr_->weak_count_);
+        if (ctrl_block_ptr_)
+            ++(ctrl_block_ptr_->weak_count_);
     }
     template <typename U>
     requires std::is_convertible_v<U*, T*>
     WeakPtr(const SharedPtr<U>& other)
             : ctrl_block_ptr_(reinterpret_cast<InnerCtrlBlock*>(other.ctrl_block_ptr_)) {
-        ++(ctrl_block_ptr_->weak_count_);
+        if (ctrl_block_ptr_)
+            ++(ctrl_block_ptr_->weak_count_);
     }
     
     WeakPtr(WeakPtr<T>&& other)
             : ctrl_block_ptr_(other.ctrl_block_ptr_) {
-        // Hmm... maybe need to add checking nullptr for ctrl_block
-        other.ctrl_block_ptr_ = new InnerCtrlBlock({0, 1}, nullptr); 
+        other.ctrl_block_ptr_ = nullptr;
     }
 
     WeakPtr& operator=(const SharedPtr<T>& shared_ptr) {
@@ -226,13 +246,9 @@ public:
         return *this;
     }
 
-    template <typename U>
-    WeakPtr(const SharedPtr<U>& shared_ptr) {
-        // TODO
-    }
-
     ~WeakPtr() {
-        if (--ctrl_block_ptr_->weak_count_)
+        if (    !ctrl_block_ptr_
+            || --ctrl_block_ptr_->weak_count_)
             return;
 
         if (ctrl_block_ptr_->shared_count_)
@@ -249,7 +265,7 @@ public:
     SharedPtr<T> lock() const noexcept{
         return expired()
             ? SharedPtr<T>()
-            : SharedPtr<T>(this->ctrl_block_ptr_);
+            : SharedPtr<T>(ctrl_block_ptr_);
     }
 
     size_t use_count() const noexcept {
@@ -257,11 +273,8 @@ public:
     }
 
     void swap(WeakPtr&& other) {
-        std::swap(this->ctrl_block_ptr_, other.ctrl_block_ptr_);
+        std::swap(ctrl_block_ptr_, other.ctrl_block_ptr_);
     }
-
-    template <typename Y, typename Deleter>
-    friend class SharedPtr;
 };
 
 
