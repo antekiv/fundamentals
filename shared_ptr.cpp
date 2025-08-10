@@ -24,7 +24,9 @@ class SharedPtr {
 
     template <typename U>
     struct CtrlBlock : Counter {
-        U*     value_ptr_    = nullptr;
+        [[no_unique_address]] 
+        Deleter deleter_      = std::default_delete<T>();
+        U*     value_ptr_     = nullptr;
     };
 
     template <typename U>
@@ -32,18 +34,20 @@ class SharedPtr {
         U value_;
     };
 
-    T* value_ptr_                 = nullptr;
+    T*            value_ptr_      = nullptr;
     CtrlBlock<T>* ctrl_block_ptr_ = nullptr;
  
-    template <typename Y, typename... Args>
-    friend SharedPtr<Y> makeShared(Args&&...);
-    
-    template <typename Y>
-    friend class WeakPtr;
+    template <typename U, typename... Args>
+    friend SharedPtr<U> makeShared(Args&&...);
+
+    template<typename U, typename Alloc, typename... Args>
+    friend SharedPtr<U> allocateShared(const Alloc& alloc, Args&&... args);
 
     template <typename U, typename DelU>
     friend class SharedPtr;
 
+    template <typename Y>
+    friend class WeakPtr;
 public:
     SharedPtr()
             : value_ptr_(nullptr)
@@ -51,17 +55,18 @@ public:
 
     SharedPtr(T* ptr)
             : value_ptr_(ptr)
-            , ctrl_block_ptr_(new CtrlBlock({1, 0}, ptr)) {}
-
+            , ctrl_block_ptr_(new CtrlBlock({1, 0}, std::default_delete<T>(), ptr)) {}
+    
     template <typename Del>
     SharedPtr(T* ptr, Del del)
             : value_ptr_(ptr)
-            , ctrl_block_ptr_(new CtrlBlock({1, 0}, ptr)) {}
+            , ctrl_block_ptr_(new CtrlBlock({1, 0}, std::default_delete<T>(), ptr)) {}
 
     template <typename Del, typename Alloc>
     SharedPtr(T* ptr, Del del, Alloc alloc)
             : value_ptr_(ptr)
-            , ctrl_block_ptr_(new CtrlBlock({1, 0}, ptr)) {}
+            , ctrl_block_ptr_(new CtrlBlock({1, 0}, std::default_delete<T>(), ptr)) {}
+    
 
     SharedPtr(const SharedPtr& other) noexcept
             : value_ptr_(other.value_ptr_)
@@ -182,18 +187,42 @@ private:
         if (ctrl_block_ptr)
             ++ctrl_block_ptr_->shared_count_;
     }
+
+    template <typename Alloc, typename... Args>
+    SharedPtr(const Alloc& alloc, Args&&... args) {
+        using AllocatorTraits = std::allocator_traits<Alloc>;
+
+        // may be rebind
+        auto new_alloc = alloc;
+        T* new_arr = AllocatorTraits::allocate(new_alloc, 1);
+        
+        try { 
+            AllocatorTraits::construct(new_alloc, new_arr, std::forward<Args>(args)...);
+        } catch (...) {
+            AllocatorTraits::deallocate(new_alloc, new_arr, 1);
+            throw;
+        }
+
+        // TODO using one new
+        value_ptr_ = new_arr;
+        ctrl_block_ptr_ = new CtrlBlock{{1, 0}, std::default_delete<T>(), new_arr};
+    }
 };
 
 template <typename T, typename... Args>
 SharedPtr<T> makeShared(Args&&... args) {
-    auto* p = new SharedPtr<T>::template CtrlBlockWithObject<T>{0, 0, nullptr, T(std::forward<Args>(args)...)};
+    auto* p = new SharedPtr<T>::template CtrlBlockWithObject<T>{0, 0, std::default_delete<T>(), nullptr, T(std::forward<Args>(args)...)};
     p->value_ptr_ = &p->value_;
     return SharedPtr<T>(p);
 }
 
+template<typename T, typename Alloc>
+using ReboundAlloc = typename std::allocator_traits<Alloc>::template rebind_alloc<T>;
+
+// https://github.com/microsoft/STL/blob/5f8b52546480a01d1d9be6c033e31dfce48d4f13/stl/inc/memory#L3025C44-L3025C59
 template<typename T, typename Alloc, typename... Args>
 SharedPtr<T> allocateShared(const Alloc& alloc, Args&&... args) {
-    return SharedPtr<T>();
+    return SharedPtr<T>(alloc, std::forward<Args>(args)...);
 }
 
 
@@ -206,6 +235,7 @@ class WeakPtr {
 
     template <typename U>
     friend class WeakPtr;
+
     template <typename U, typename Deleter>
     friend class SharedPtr;
 public:
@@ -278,7 +308,6 @@ public:
 };
 
 
-
 template <typename T>
 class EnableSharedFromThis {
     WeakPtr<T> weak_ptr_;
@@ -291,3 +320,10 @@ public:
     template <typename Y, typename Deleter>
     friend class SharedPtr;
 };
+
+
+// template <class _Ty>
+// class _Ref_count : public _Ref_count_base { // handle reference counting for pointer without deleter
+
+// template <class _Resource, class _Dx>
+// class _Ref_count_resource : public _Ref_count_base { // handle reference counting for object with deleter

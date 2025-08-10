@@ -570,6 +570,7 @@ struct MyDeleter {
     }
 };
 
+
 void test_custom_deleter() {
     MyDeleter deleter;
     int x = 0;
@@ -634,6 +635,7 @@ void test_custom_deleter() {
     assert(custom_deleter_called == 1);
 }
 
+
 int main() {
     //static_assert(!std::is_base_of_v<std::shared_ptr<VerySpecialType>, SharedPtr<VerySpecialType>>,
     //        "don't try to use std smart pointers");
@@ -666,5 +668,4 @@ int main() {
 
     std::cout << 0;
     */
-
 }//: value_ptr_(other.value_ptr_), ctrl_block_ptr_(other.ctrl_block_ptr_) 
