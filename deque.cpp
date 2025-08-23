@@ -1,7 +1,7 @@
 #include <array>
 #include <limits>
 #include <vector>
-
+#include <iostream>
 
 
 template <typename T, typename Allocator = std::allocator<T>>
@@ -21,11 +21,11 @@ template <bool IsConst>
         using reference_type = std::conditional_t<IsConst, const T&, T&>;
         using value_type = T;
     private:
-        pointer_type ptr_;
+        std::array<T, BUF_SIZE>** ptr_;
         size_t buf_ind_;
         
     public:
-        base_iterator(T* ptr = nullptr, size_t buf_ind = 0)
+        base_iterator(std::array<T, BUF_SIZE>** ptr = nullptr, size_t buf_ind = 0)
                 : ptr_(ptr)
                 , buf_ind_(buf_ind) {}
 
@@ -36,8 +36,8 @@ template <bool IsConst>
             return std::tie(ptr_, buf_ind_) == std::tie(other.ptr_, other.buf_ind_);
         }
         
-        reference_type operator*() const {return (*ptr_)[buf_ind_];};
-        pointer_type operator->() const {return &(*ptr_)[buf_ind_];}
+        reference_type operator*() const {return (**ptr_)[buf_ind_];};
+        pointer_type operator->() const {return &(**ptr_)[buf_ind_];}
 
         base_iterator& operator++() {
             iter_inc_();
@@ -61,6 +61,7 @@ template <bool IsConst>
 
     private:
         void iter_inc_() {
+            std::cout << "iter ++\n";
             ++buf_ind_;
 
             if (buf_ind_ == BUF_SIZE) {
@@ -83,13 +84,21 @@ public:
     using iterator = base_iterator<false>;
     
     iterator begin() {
+        std::cout << "iter begin\n";
+        if (buffers_.empty())
+            return {nullptr, 0};
+
         return {&buffers_[begin_ptr_ind_], begin_buf_ind_};
     }
 
     iterator end() {
+        std::cout << "iter end\n";
+        if (buffers_.empty())
+            return {nullptr, 0};
+
         // decrement to end() should get the last element
-        int end_ptr_ind = begin_ptr_ind_; 
-        int end_buf_ind;
+        size_t end_ptr_ind = begin_ptr_ind_; 
+        size_t end_buf_ind;
 
         if (begin_buf_ind_ + size_ <= BUF_SIZE) {
             end_buf_ind = begin_buf_ind_ + size_;
@@ -105,15 +114,30 @@ public:
         }
         return {&buffers_[end_ptr_ind], end_buf_ind};
     }
-/*
+
     const_iterator begin() const {
-        return {arr_};
+        return {buffers_[begin_ptr_ind_], begin_buf_ind_};
     }
 
     const_iterator end() const {
-        return {arr_ + sz_};
-    }
+        int end_ptr_ind = begin_ptr_ind_; 
+        int end_buf_ind;
 
+        if (begin_buf_ind_ + size_ <= BUF_SIZE) {
+            end_buf_ind = begin_buf_ind_ + size_;
+
+        } else {
+            auto common = size_ - BUF_SIZE + begin_buf_ind_;
+            end_buf_ind = common % BUF_SIZE;
+
+            end_ptr_ind += 1 + (common - 1) / BUF_SIZE;
+
+            if (end_buf_ind == 0)
+                end_buf_ind = BUF_SIZE;
+        }
+        return {buffers_[end_ptr_ind], end_buf_ind};
+    }
+    /*
     const_iterator cbegin() const {
         return {arr_};
     }
@@ -121,10 +145,15 @@ public:
     const_iterator cend() const {
         return {arr_ + sz_};
     }
-        */
+    */
+
 public:
     Deque() {}
     Deque(size_t size, T def_value = T()) {}
+
+    void push_back(const T& value) {
+
+    }
 
     T& operator[](size_t ind) const { 
         return (*buffers_[0])[0];
@@ -135,7 +164,7 @@ public:
     }
 
     T& at(size_t ind) {
-        //if ()
+        return (*buffers_[0])[0];
     }
 
     size_t size() const {
