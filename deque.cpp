@@ -1,19 +1,13 @@
 #include <array>
 #include <limits>
 #include <vector>
-#include <iostream>
+#include <type_traits>
 
 
-template <typename T, typename Allocator = std::allocator<T>>
+template <typename T, typename Alloc = std::allocator<T>>
 class Deque {
     static constexpr size_t BUF_SIZE = 32;
-    
-    std::vector<std::array<T, BUF_SIZE>*> buffers_;
-    size_t begin_ptr_ind_ = 0;
-    size_t begin_buf_ind_ = 0;
-    size_t size_;
 
-private:
 template <bool IsConst>
     class base_iterator {
     public:
@@ -21,11 +15,11 @@ template <bool IsConst>
         using reference_type = std::conditional_t<IsConst, const T&, T&>;
         using value_type = T;
     private:
-        std::array<T, BUF_SIZE>** ptr_;
+        T** ptr_;
         size_t buf_ind_;
         
     public:
-        base_iterator(std::array<T, BUF_SIZE>** ptr = nullptr, size_t buf_ind = 0)
+        base_iterator(T** ptr = nullptr, size_t buf_ind = 0)
                 : ptr_(ptr)
                 , buf_ind_(buf_ind) {}
 
@@ -36,8 +30,8 @@ template <bool IsConst>
             return std::tie(ptr_, buf_ind_) == std::tie(other.ptr_, other.buf_ind_);
         }
         
-        reference_type operator*() const {return (**ptr_)[buf_ind_];};
-        pointer_type operator->() const {return &(**ptr_)[buf_ind_];}
+        reference_type operator*() const {return (*ptr_)[buf_ind_];}
+        pointer_type operator->() const {return &(*ptr_)[buf_ind_];}
 
         base_iterator& operator++() {
             iter_inc_();
@@ -61,7 +55,6 @@ template <bool IsConst>
 
     private:
         void iter_inc_() {
-            std::cout << "iter ++\n";
             ++buf_ind_;
 
             if (buf_ind_ == BUF_SIZE) {
@@ -84,87 +77,57 @@ public:
     using iterator = base_iterator<false>;
     
     iterator begin() {
-        std::cout << "iter begin\n";
-        if (buffers_.empty())
-            return {nullptr, 0};
-
-        return {&buffers_[begin_ptr_ind_], begin_buf_ind_};
+        return begin_;
     }
 
+    // const?
     iterator end() {
-        std::cout << "iter end\n";
-        if (buffers_.empty())
-            return {nullptr, 0};
-
-        // decrement to end() should get the last element
-        size_t end_ptr_ind = begin_ptr_ind_; 
-        size_t end_buf_ind;
-
-        if (begin_buf_ind_ + size_ <= BUF_SIZE) {
-            end_buf_ind = begin_buf_ind_ + size_;
-
-        } else {
-            auto common = size_ - BUF_SIZE + begin_buf_ind_;
-            end_buf_ind = common % BUF_SIZE;
-
-            end_ptr_ind += 1 + (common - 1) / BUF_SIZE;
-
-            if (end_buf_ind == 0)
-                end_buf_ind = BUF_SIZE;
-        }
-        return {&buffers_[end_ptr_ind], end_buf_ind};
+        return end_;
     }
 
     const_iterator begin() const {
-        return {buffers_[begin_ptr_ind_], begin_buf_ind_};
+        return begin_;
     }
 
     const_iterator end() const {
-        int end_ptr_ind = begin_ptr_ind_; 
-        int end_buf_ind;
-
-        if (begin_buf_ind_ + size_ <= BUF_SIZE) {
-            end_buf_ind = begin_buf_ind_ + size_;
-
-        } else {
-            auto common = size_ - BUF_SIZE + begin_buf_ind_;
-            end_buf_ind = common % BUF_SIZE;
-
-            end_ptr_ind += 1 + (common - 1) / BUF_SIZE;
-
-            if (end_buf_ind == 0)
-                end_buf_ind = BUF_SIZE;
-        }
-        return {buffers_[end_ptr_ind], end_buf_ind};
-    }
-    /*
-    const_iterator cbegin() const {
-        return {arr_};
+        return end_;
     }
 
-    const_iterator cend() const {
-        return {arr_ + sz_};
-    }
-    */
+    // TODO: add reverse iterator
 
 public:
+    using AllocTraits = std::allocator_traits<Alloc>;
+
     Deque() {}
     Deque(size_t size, T def_value = T()) {}
+    ~Deque() {
+        for (; begin_ != end_; ++begin_ ) {
+            AllocTraits::destroy(alloc_, &(*begin_));
+        }
 
-    void push_back(const T& value) {
+        for (auto& buf_ptr: buffers_)
+            AllocTraits::deallocate(alloc_, buf_ptr, BUF_SIZE);
+    }
 
+    template <typename... Args>
+    void push_back(Args&&... value) {
+        if (end_ == deq_end())
+            back_resize(); 
+
+        AllocTraits::construct(alloc_, &(*end_), std::forward<decltype(value)>(value)...);
+        ++end_;
     }
 
     T& operator[](size_t ind) const { 
-        return (*buffers_[0])[0];
+        return (buffers_[0])[0];
     }
 
     T& operator[](size_t ind) { 
-        return (*buffers_[0])[0];
+        return (buffers_[0])[0];
     }
 
     T& at(size_t ind) {
-        return (*buffers_[0])[0];
+        return (buffers_[0])[0];
     }
 
     size_t size() const {
@@ -172,8 +135,36 @@ public:
     }
 
 private:
+    std::vector<T*> buffers_;
+    iterator begin_;
+    iterator end_;
+    size_t size_ = 0;
+    [[no_unique_address]] Alloc alloc_ = Alloc();
 
+private:
+    iterator deq_begin() {
+        if (buffers_.empty())
+            return {};
 
+        return {&buffers_[0], 0};
+    }
+    iterator deq_end() {
+        if (buffers_.empty())
+            return {};
+
+        return {&(buffers_[buffers_.size() - 1]), BUF_SIZE};
+    }
+
+    void back_resize() {
+        auto new_arr = AllocTraits::allocate(alloc_, BUF_SIZE);
+        buffers_.push_back(new_arr);
+
+        // initialize iterators
+        if (begin_ == iterator{}) {
+            begin_ = deq_begin();
+            end_   = deq_begin();
+        }
+    }
 };
 
 // need to remember (i1, j1) for begin, (i2, j2) for end
