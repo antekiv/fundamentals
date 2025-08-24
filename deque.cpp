@@ -2,6 +2,7 @@
 #include <limits>
 #include <vector>
 #include <type_traits>
+#include <iostream>
 
 
 template <typename T, typename Alloc = std::allocator<T>>
@@ -15,11 +16,11 @@ template <bool IsConst>
         using reference_type = std::conditional_t<IsConst, const T&, T&>;
         using value_type = T;
     private:
-        T** ptr_;
-        size_t buf_ind_;
+        T* ptr_        = nullptr;
+        size_t buf_ind_ = 0;
         
     public:
-        base_iterator(T** ptr = nullptr, size_t buf_ind = 0)
+        base_iterator(T* ptr = nullptr, size_t buf_ind = 0)
                 : ptr_(ptr)
                 , buf_ind_(buf_ind) {}
 
@@ -30,8 +31,8 @@ template <bool IsConst>
             return std::tie(ptr_, buf_ind_) == std::tie(other.ptr_, other.buf_ind_);
         }
         
-        reference_type operator*() const {return (*ptr_)[buf_ind_];}
-        pointer_type operator->() const {return &(*ptr_)[buf_ind_];}
+        reference_type operator*() const {return ptr_[buf_ind_];}
+        pointer_type operator->() const  {return &ptr_[buf_ind_];}
 
         base_iterator& operator++() {
             iter_inc_();
@@ -54,18 +55,18 @@ template <bool IsConst>
         }
 
     private:
-        void iter_inc_() {
-            ++buf_ind_;
-
-            if (buf_ind_ == BUF_SIZE) {
+        void iter_inc_() {     
+            if (buf_ind_ != BUF_SIZE) {
+                ++buf_ind_;
+            } else {
                 ++ptr_;
                 buf_ind_ = 0;
             }
         }
         void iter_dec_() {
-            --buf_ind_;
-
-            if (buf_ind_ == std::numeric_limits<size_t>::max()) {
+            if (buf_ind_ != std::numeric_limits<size_t>::max()) {
+                --buf_ind_;
+            } else {
                 --ptr_;
                 buf_ind_ = BUF_SIZE - 1;
             }
@@ -110,7 +111,7 @@ public:
     }
 
     template <typename... Args>
-    void push_back(Args&&... value) {
+    void emplace_back(Args&&... value) {
         if (end_ == deq_end())
             back_resize(); 
 
@@ -146,24 +147,24 @@ private:
         if (buffers_.empty())
             return {};
 
-        return {&buffers_[0], 0};
+        return {buffers_[0], 0};
     }
     iterator deq_end() {
         if (buffers_.empty())
             return {};
 
-        return {&(buffers_[buffers_.size() - 1]), BUF_SIZE};
+        return {buffers_.back(), BUF_SIZE};
     }
 
     void back_resize() {
-        auto new_arr = AllocTraits::allocate(alloc_, BUF_SIZE);
+        T* new_arr = AllocTraits::allocate(alloc_, BUF_SIZE);
         buffers_.push_back(new_arr);
 
-        // initialize iterators
-        if (begin_ == iterator{}) {
-            begin_ = deq_begin();
-            end_   = deq_begin();
-        }
+        // TODO: rethink
+        begin_ = deq_begin();
+        end_ = (end() == iterator{})
+            ? deq_begin()
+            : --deq_end();
     }
 };
 
