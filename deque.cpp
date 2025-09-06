@@ -10,7 +10,7 @@ template <typename T, typename Alloc = std::allocator<T>>
 class Deque {
     static constexpr size_t BUF_SIZE = 32;
 
-template <bool IsConst>
+    template <bool IsConst>
     class base_iterator {
     public:
         using pointer_type = std::conditional_t<IsConst, const T*, T*>;
@@ -27,8 +27,8 @@ template <bool IsConst>
         
     public:
         base_iterator(T** ptr = nullptr, size_t buf_ind = 0)
-                : ptr_(ptr)
-                , buf_ind_(buf_ind) {}
+            : ptr_(ptr)
+            , buf_ind_(buf_ind) {}
 
         base_iterator(const base_iterator&) = default;
         base_iterator& operator=(const base_iterator&) = default;
@@ -61,9 +61,13 @@ template <bool IsConst>
             return copy;
         }
 
+        base_iterator<true> to_const() const {
+            return base_iterator<true>(this->ptr_, this->buf_ind_);
+        }
     private:
         void iter_inc_() {
             ++buf_ind_;
+
             if (buf_ind_ == BUF_SIZE) {
                 ++ptr_;
                 buf_ind_ = 0;
@@ -88,17 +92,16 @@ public:
         return begin_;
     }
 
-    // const?
     iterator end() {
         return end_;
     }
 
     const_iterator begin() const {
-        return begin_;
+        return begin_.to_const();
     }
 
     const_iterator end() const {
-        return end_;
+        return end_.to_const();
     }
 
     // TODO: add reverse iterator
@@ -107,7 +110,32 @@ public:
     using AllocTraits = std::allocator_traits<Alloc>;
 
     Deque() {}
-    Deque(size_t size, T def_value = T()) {}
+    Deque(const Deque& other)
+            : alloc_(other.alloc_) {
+        for (const auto& el : other) {
+            this->emplace_back(el);
+        }
+    }
+    Deque(size_t size, T def_value = T()) {
+        Deque temp;
+        for (size_t i = 0; i < size; ++i) {
+            temp.emplace_back(def_value);
+        }
+        swap(temp);
+    }
+
+    Deque& operator=(const Deque& other) {
+        if (this == &other)
+            return *this;
+
+        Deque temp;
+        for (const auto& el : other) {
+            temp.emplace_back(el);
+        }
+        swap(temp);
+        return *this;
+    }
+
     ~Deque() {
         for (; begin_ != end_; ++begin_ )
             AllocTraits::destroy(alloc_, &(*begin_));
@@ -123,6 +151,7 @@ public:
 
         AllocTraits::construct(alloc_, &(*end_), std::forward<decltype(value)>(value)...);
         ++end_;
+        ++size_;
     }
 
     template<typename Self>
@@ -146,20 +175,32 @@ public:
         }
     }
 
-    T& at(size_t ind) {
-        return (buffers_[0])[0];
+    decltype(auto) at(this auto&& self, size_t ind) {
+        if (self.size_ <= ind)
+            throw std::out_of_range("");
+
+        return self[ind];
     }
 
     size_t size() const {
         return size_;
     }
 
+    void swap(Deque& other)
+    {
+        std::swap(buffers_, other.buffers_);
+        std::swap(size_, other.size_);
+        std::swap(alloc_, other.alloc_);
+        std::swap(begin_, other.begin_);
+        std::swap(end_, other.end_);
+    }
+
 private:
     std::vector<T*> buffers_;
-    iterator begin_;
-    iterator end_;
     size_t size_ = 0;
     [[no_unique_address]] Alloc alloc_ = Alloc();
+    iterator begin_;
+    iterator end_;
 
 private:
     iterator deq_begin() {
