@@ -5,10 +5,10 @@
 #include <iostream>
 #include <utility>
 
-
 template <typename T, typename Alloc = std::allocator<T>>
 class Deque {
     static constexpr size_t BUF_SIZE = 32;
+    static constexpr size_t DEQ_BEG = BUF_SIZE / 2;
 
     template <bool IsConst>
     class base_iterator {
@@ -19,8 +19,6 @@ class Deque {
     private:
         template <typename Self>
         friend decltype(auto) Deque::operator[](this Self&&, size_t);
-        //friend T& Deque::operator[](size_t);
-        //friend const T& Deque::operator[](size_t) const;
 
         T** ptr_        = nullptr;
         size_t buf_ind_ = 0;
@@ -64,6 +62,14 @@ class Deque {
         base_iterator<true> to_const() const {
             return base_iterator<true>(this->ptr_, this->buf_ind_);
         }
+
+        T** get_ptr() const {
+            return ptr_;
+        }
+
+        size_t get_buf_ind() const {
+            return buf_ind_;
+        }
     private:
         void iter_inc_() {
             ++buf_ind_;
@@ -74,6 +80,7 @@ class Deque {
             } 
         }
         void iter_dec_() {
+            //std::cout << "iter_dec_: " << *ptr_ << " -> " << buf_ind_ << std::endl;
             --buf_ind_;
 
             if (buf_ind_ == std::numeric_limits<size_t>::max()) {
@@ -147,11 +154,41 @@ public:
     template <typename... Args>
     void emplace_back(Args&&... value) {
         if (end_ == deq_end())
-            back_resize(); 
+            resize_back(); 
 
         AllocTraits::construct(alloc_, &(*end_), std::forward<decltype(value)>(value)...);
+
         ++end_;
         ++size_;
+    }
+    template <typename... Args>
+    void emplace_front(Args&&... value) {
+        if (!buffers_.empty())
+            --begin_;
+
+        if (begin_ == deq_null_begin())
+            resize_front(); 
+
+        AllocTraits::construct(alloc_, &(*begin_), std::forward<decltype(value)>(value)...);
+        ++size_;
+    }
+
+    template <typename U>
+    void push_back(U&& value) {
+        emplace_back(std::forward<U>(value));
+    }
+    template <typename U>
+    void push_front(U&& value) {
+        emplace_front(std::forward<U>(value));
+    }
+    
+    void pop_back() {
+        --end_;
+        --size_;
+    }
+    void pop_front() {
+        ++begin_;
+        --size_;
     }
 
     template<typename Self>
@@ -168,6 +205,7 @@ public:
             ptr += forward;
         }
 
+        //std::cout << "operator[]: " << *ptr << " -> " << buf_ind << std::endl;
         if constexpr (std::is_const_v<std::remove_reference_t<Self>>) {
             return static_cast<const std::remove_reference_t<T>&>((*ptr)[buf_ind]);
         } else {
@@ -207,8 +245,15 @@ private:
         if (buffers_.empty())
             return {};
 
-        return {&buffers_[0], 0};
+        return {&buffers_[1], DEQ_BEG};
     }
+    iterator deq_null_begin() {
+        if (buffers_.empty())
+            return {};
+
+        return {&buffers_[0], BUF_SIZE - 1};
+    }
+
     iterator deq_end() {
         if (buffers_.empty())
             return {};
@@ -216,22 +261,67 @@ private:
         return {&buffers_.back(), 0};
     }
 
-    void back_resize() {
-        T* new_arr = AllocTraits::allocate(alloc_, BUF_SIZE);
-
-        if (buffers_.empty()) {
-            buffers_.push_back(new_arr);
-        } else {
-            buffers_.back() = new_arr;
-        }
+    void initialize_buffer() {
+        if (buffers_.size())
+            return;
+        
+        T* new_buff = AllocTraits::allocate(alloc_, BUF_SIZE);
+        
+        buffers_.reserve(3);
+        buffers_.push_back(nullptr);
+        buffers_.push_back(new_buff);
         buffers_.push_back(nullptr);
 
-        // TODO: rethink
         begin_ = deq_begin();
-        end_ = (end() == iterator{})
-            ? deq_begin()
-            // last_buf_begin
-            : iterator{&buffers_[buffers_.size() - 2], 0};
+        end_ = deq_begin();
+    }
+
+    std::pair<size_t, size_t> find_inds(const iterator& it){
+        if (it.get_ptr() == nullptr)
+            return {0, 0};
+
+        size_t index_ptr = 0;
+        for (const auto& ptr : buffers_) {
+            if (ptr == *it.get_ptr())
+                break;
+            ++index_ptr;
+        }  
+        return {index_ptr, it.get_buf_ind()};
+    }
+
+
+    void resize_back() {
+        if (buffers_.empty()) {
+            initialize_buffer();
+        } else {
+            T* new_buff = AllocTraits::allocate(alloc_, BUF_SIZE);
+            buffers_.back() = new_buff;
+            buffers_.push_back(nullptr);
+
+            // structure binding
+            auto [first, second] = find_inds(begin_);
+
+            begin_ = iterator{&buffers_[first], second};
+            end_ = iterator{&buffers_[buffers_.size() - 2], 0};
+        }
+    }
+
+    void resize_front() {
+        if (buffers_.empty()) {
+            initialize_buffer();
+        } else {
+            std::vector<T*> new_buffers(buffers_.size() + 1, nullptr);
+            std::copy(buffers_.begin(), buffers_.end(), std::next(new_buffers.begin()));
+            
+            T* new_buff = AllocTraits::allocate(alloc_, BUF_SIZE);
+            new_buffers[1] = new_buff;
+
+            auto [first, second]  = find_inds(end_);
+
+            buffers_ = std::move(new_buffers);
+            begin_ = iterator{&buffers_[1], BUF_SIZE - 1};
+            end_ = iterator{&buffers_[first + 1], second};
+        }
     }
 };
 
