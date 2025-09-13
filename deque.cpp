@@ -4,6 +4,7 @@
 #include <type_traits>
 #include <iostream>
 #include <utility>
+#include <cstdlib>
 
 template <typename T, typename Alloc = std::allocator<T>>
 class Deque {
@@ -35,6 +36,10 @@ class Deque {
             //std::cout << "(" << ptr_ << ", " << buf_ind_ << ") == (" << other.ptr_ << ", " << other.buf_ind_ << ")" << std::endl;
             return std::tie(ptr_, buf_ind_) == std::tie(other.ptr_, other.buf_ind_);
         }
+
+        bool operator>=(const base_iterator& other) const {
+            return std::tie(ptr_, buf_ind_) >= std::tie(other.ptr_, other.buf_ind_);
+        }
         
         reference_type operator*() const {return (*ptr_)[buf_ind_];}
         pointer_type operator->() const  {return &(*ptr_)[buf_ind_];}
@@ -43,7 +48,7 @@ class Deque {
             iter_inc_();
             return *this;
         }
-        base_iterator& operator++(int) {
+        base_iterator operator++(int) {
             base_iterator copy = *this;
             iter_inc_();
             return copy;
@@ -53,7 +58,7 @@ class Deque {
             iter_dec_();
             return *this;
         }
-        base_iterator& operator--(int) {
+        base_iterator operator--(int) {
             base_iterator copy = *this;
             iter_dec_();
             return copy;
@@ -69,6 +74,40 @@ class Deque {
 
         size_t get_buf_ind() const {
             return buf_ind_;
+        }
+
+        size_t operator-(const base_iterator& other) const {
+            //std::cout << "operator-: " << BUF_SIZE * (this->ptr_ - other.ptr_) + (this->buf_ind_ - other.buf_ind_) << std::endl;
+
+            return BUF_SIZE * (this->ptr_ - other.ptr_) + (this->buf_ind_ - other.buf_ind_);
+        }
+
+        base_iterator& operator+(size_t n) {
+            //std::cout << "operator+ correct (" << it.ptr_ << ", " << it.buf_ind_ << ")" << std::endl;
+            auto diff = std::lldiv(n, BUF_SIZE);
+            ptr_ += diff.quot;
+
+            if (buf_ind_ + diff.rem < BUF_SIZE) {
+                buf_ind_ += diff.rem;
+            } else {
+                ++ptr_;
+                buf_ind_ = (buf_ind_ + diff.rem) % BUF_SIZE;
+            }
+
+            return *this;
+        }
+        base_iterator& operator-(size_t n) {
+            auto diff = std::lldiv(n, BUF_SIZE);
+            ptr_ -= diff.quot;
+
+            if (buf_ind_ - diff.rem < BUF_SIZE) {
+                buf_ind_ -= diff.rem;
+            } else {
+                --ptr_;
+                buf_ind_ = (buf_ind_ - diff.rem) % BUF_SIZE;
+            }
+
+            return *this;
         }
     private:
         void iter_inc_() {
@@ -163,11 +202,11 @@ public:
     }
     template <typename... Args>
     void emplace_front(Args&&... value) {
-        if (!buffers_.empty())
-            --begin_;
+        if (buffers_.empty())
+            resize_front();
 
-        if (begin_ == deq_null_begin())
-            resize_front(); 
+        if (--begin_ == deq_null_begin())
+            resize_front();
 
         AllocTraits::construct(alloc_, &(*begin_), std::forward<decltype(value)>(value)...);
         ++size_;
@@ -282,7 +321,7 @@ private:
 
         size_t index_ptr = 0;
         for (const auto& ptr : buffers_) {
-            if (ptr == *it.get_ptr())
+            if (ptr == *(it.get_ptr()))
                 break;
             ++index_ptr;
         }  
@@ -294,12 +333,12 @@ private:
         if (buffers_.empty()) {
             initialize_buffer();
         } else {
+            // structure binding
+            auto [first, second] = find_inds(begin_);
+
             T* new_buff = AllocTraits::allocate(alloc_, BUF_SIZE);
             buffers_.back() = new_buff;
             buffers_.push_back(nullptr);
-
-            // structure binding
-            auto [first, second] = find_inds(begin_);
 
             begin_ = iterator{&buffers_[first], second};
             end_ = iterator{&buffers_[buffers_.size() - 2], 0};
@@ -325,4 +364,26 @@ private:
     }
 };
 
+// TODO template instead of int, and concept
+//template <typename T, typename Alloc = std::allocator<T>>
+
+/*template <typename T>
+typename Deque<T>::template iterator<T> operator+(typename Deque<T>::template iterator<T> it, int count)
+{
+    while (count--) {++it;}
+    return it;
+}
+*/
+
+
+
+//template <typename T, typename Alloc = std::allocator<T>>
+/*
+template <typename T>
+typename Deque<T>::iterator operator-(typename Deque<T>::iterator it, int count)
+{
+    while (count--) {--it;}
+    return it;
+}
+*/
 // need to remember (i1, j1) for begin, (i2, j2) for end
