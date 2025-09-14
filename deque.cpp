@@ -77,37 +77,40 @@ class Deque {
         }
 
         size_t operator-(const base_iterator& other) const {
-            //std::cout << "operator-: " << BUF_SIZE * (this->ptr_ - other.ptr_) + (this->buf_ind_ - other.buf_ind_) << std::endl;
-
             return BUF_SIZE * (this->ptr_ - other.ptr_) + (this->buf_ind_ - other.buf_ind_);
         }
 
-        base_iterator& operator+(size_t n) {
-            //std::cout << "operator+ correct (" << it.ptr_ << ", " << it.buf_ind_ << ")" << std::endl;
-            auto diff = std::lldiv(n, BUF_SIZE);
-            ptr_ += diff.quot;
+        base_iterator operator+(size_t n) {
+            auto new_ptr = ptr_;
+            auto new_buf_ind = buf_ind_;
 
-            if (buf_ind_ + diff.rem < BUF_SIZE) {
-                buf_ind_ += diff.rem;
+            auto diff = std::lldiv(n, BUF_SIZE);
+            new_ptr += diff.quot;
+
+            if (new_buf_ind + diff.rem < BUF_SIZE) {
+                new_buf_ind += diff.rem;
             } else {
-                ++ptr_;
-                buf_ind_ = (buf_ind_ + diff.rem) % BUF_SIZE;
+                ++new_ptr;
+                new_buf_ind = (new_buf_ind + diff.rem) % BUF_SIZE;
             }
 
-            return *this;
+            return base_iterator{new_ptr, new_buf_ind};
         }
-        base_iterator& operator-(size_t n) {
+        base_iterator operator-(size_t n) {
+            auto new_ptr = ptr_;
+            auto new_buf_ind = buf_ind_;
+             
             auto diff = std::lldiv(n, BUF_SIZE);
-            ptr_ -= diff.quot;
+            new_ptr -= diff.quot;
 
-            if (buf_ind_ - diff.rem < BUF_SIZE) {
-                buf_ind_ -= diff.rem;
+            if (new_buf_ind - diff.rem < BUF_SIZE) {
+                new_buf_ind -= diff.rem;
             } else {
-                --ptr_;
-                buf_ind_ = (buf_ind_ - diff.rem) % BUF_SIZE;
+                --new_ptr;
+                new_buf_ind = (new_buf_ind - diff.rem) % BUF_SIZE;
             }
 
-            return *this;
+            return base_iterator{new_ptr, new_buf_ind};
         }
     private:
         void iter_inc_() {
@@ -147,6 +150,14 @@ public:
     }
 
     const_iterator end() const {
+        return end_.to_const();
+    }
+
+    const_iterator cbegin() const {
+        return begin_.to_const();
+    }
+
+    const_iterator cend() const {
         return end_.to_const();
     }
 
@@ -259,6 +270,60 @@ public:
         return self[ind];
     }
 
+    iterator erase(iterator pos) {
+        if (begin_ == end_) {
+            return end_;
+        }
+        
+        if (pos == begin_) {
+            pop_front();
+            return begin_;
+        }
+
+        if (pos == --end()) {
+            pop_back();
+            return end_;
+        }
+
+        auto result = pos + 1;
+        for (auto it = result; it != end_; ++it) {
+            auto val = *it;
+            *(it - 1) = val;
+        }
+
+        --end_;
+        --size_;
+
+        return result;
+    }
+
+    // insert before pos
+    iterator insert(iterator pos, const T& val) {
+        if (begin_ == end_) {
+            push_back(val);
+            return begin_;
+        }
+        
+        if (pos == begin_) {
+            push_front(val);
+            return begin_;
+        }
+
+        if (pos == end()) {
+            push_back(val);
+            return end_;
+        }
+
+        push_front(*begin());
+        for (auto it = begin_ + 1; it != pos; ++it) {
+            auto prev_val = *it;
+            *(it - 1) = prev_val;
+            //std::cout << "ind: " << (it - 1).get_buf_ind() << " --> " << prev_val << std::endl; 
+        }
+        *(pos - 1) = val;
+        return pos;
+    }
+
     size_t size() const {
         return size_;
     }
@@ -363,27 +428,3 @@ private:
         }
     }
 };
-
-// TODO template instead of int, and concept
-//template <typename T, typename Alloc = std::allocator<T>>
-
-/*template <typename T>
-typename Deque<T>::template iterator<T> operator+(typename Deque<T>::template iterator<T> it, int count)
-{
-    while (count--) {++it;}
-    return it;
-}
-*/
-
-
-
-//template <typename T, typename Alloc = std::allocator<T>>
-/*
-template <typename T>
-typename Deque<T>::iterator operator-(typename Deque<T>::iterator it, int count)
-{
-    while (count--) {--it;}
-    return it;
-}
-*/
-// need to remember (i1, j1) for begin, (i2, j2) for end
