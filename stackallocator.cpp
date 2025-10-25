@@ -2,6 +2,7 @@
 
 #include <memory>
 #include <iostream>
+#include <iterator>
 
 template <typename T,
           typename Allocator = std::allocator<T>>
@@ -26,16 +27,22 @@ private:
     template <bool IsConst>
     class base_iterator {
         friend void List<T, Allocator>::rebind_nodes(base_iterator<false>, BaseNode*);
-        friend void List<T, Allocator>::bind_nodes(base_iterator<false>, base_iterator<false>);
+        friend void List<T, Allocator>::bind_nodes(base_iterator<true>, base_iterator<true>);
+        friend base_iterator<false> List<T, Allocator>::erase(base_iterator<true>);
+        friend base_iterator<true> List<T, Allocator>::delete_node(base_iterator<true>);
     public:
+    
         using pointer_type = std::conditional_t<IsConst, const T*, T*>;
         using reference_type = std::conditional_t<IsConst, const T&, T&>;
+        using difference_type = std::ptrdiff_t;
         using value_type = T;
+        using iterator_category = std::bidirectional_iterator_tag;
     private:
         BaseNode* ptr_;
         
     public:
         base_iterator(BaseNode* ptr): ptr_(ptr) {}
+
         base_iterator(const base_iterator&) = default;
         base_iterator& operator=(const base_iterator& other) = default;
 
@@ -50,7 +57,7 @@ private:
             ptr_ = ptr_->next;
             return *this;
         }
-        base_iterator operator++(int) {
+        const base_iterator operator++(int) {
             base_iterator copy = *this;
             ptr_ = ptr_->next;
             return copy;
@@ -60,10 +67,22 @@ private:
             ptr_ = ptr_->prev;
             return *this;
         }
-        base_iterator operator--(int) {
+        const base_iterator operator--(int) {
             base_iterator copy = *this;
             ptr_ = ptr_->prev;
             return copy;
+        }
+
+        base_iterator operator+(size_t n) {
+            base_iterator iter = *this;
+            while (n--) { ++iter;}
+            return iter;
+        }
+
+        base_iterator operator-(size_t n) {
+            base_iterator iter = *this;
+            while (n--) { --iter;}
+            return iter;
         }
 
         base_iterator<true> to_const() const {
@@ -73,7 +92,7 @@ private:
 public:
     using const_iterator = base_iterator<true>;
     using iterator = base_iterator<false>;
-    
+
     iterator begin() {
         return {fake_node_.next};
     }
@@ -97,8 +116,7 @@ public:
     }
 
     const_iterator cend() const {
-        std::cout << "cend.fake_node_.prev: " << &fake_node_ << std::endl;
-        return const_iterator{&fake_node_};
+        return const_iterator{fake_node_.prev};
     }
 
     /* TODO:
@@ -113,9 +131,10 @@ public:
 
 public:
     using AllocTraits = std::allocator_traits<decltype(alloc_)>;
-    List() 
+    List(Allocator alloc = std::allocator<T>()) 
         : fake_node_{&fake_node_, &fake_node_}
-        , sz_{0} {}
+        , sz_{0}
+        , alloc_(alloc) {}
 
     ~List() {
         BaseNode* node = fake_node_.next;
@@ -143,19 +162,21 @@ public:
         insert(begin(), val);
     }
 
-    iterator erase(const_iterator first, const_iterator last) {
-        iterator prev = first;
-        --prev;
+    iterator erase(const_iterator pos) {
+        const_iterator prev = pos - 1;
 
-        iterator it = first;
-        for (;it != last;) {
-            it = delete_node(it);
-        }
-        it = delete_node(it);
+        pos = delete_node(pos);
+        bind_nodes(prev, pos);
 
-        bind_nodes(prev, it);
+        return iterator(pos.ptr_);
+    }
 
-        return it;
+    void pop_front() {
+        erase(cbegin());
+    }
+
+    void pop_back() {
+        erase(cend());
     }
 
     size_type size() const {
@@ -175,8 +196,8 @@ private:
         return new_arr;
     }
 
-    iterator delete_node(iterator pos) {
-        iterator ret = pos.ptr_->next;
+    const_iterator delete_node(const_iterator pos) {
+        const_iterator ret = pos + 1;
         
         AllocTraits::destroy(alloc_, &(static_cast<Node*>(pos.ptr_)->value));
         AllocTraits::deallocate(alloc_, static_cast<Node*>(pos.ptr_), 1);
@@ -185,7 +206,7 @@ private:
         return ret;
     }
 
-    void bind_nodes(iterator lhs, iterator rhs) {
+    void bind_nodes(const_iterator lhs, const_iterator rhs) {
         lhs.ptr_->next = rhs.ptr_;
         rhs.ptr_->prev = lhs.ptr_;
     }
@@ -198,7 +219,4 @@ private:
         new_node->next = pos.ptr_;
         pos.ptr_->prev = new_node;
     }
-    
-
-   
 };
