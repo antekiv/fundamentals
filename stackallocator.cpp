@@ -25,13 +25,7 @@ class List {
 private:
     template <bool IsConst>
     class base_iterator {
-        friend void List<T, Allocator>::rebind_nodes(base_iterator<true>, BaseNode*);
-        friend void List<T, Allocator>::bind_nodes(base_iterator<true>, base_iterator<true>);
-        friend base_iterator<false> List<T, Allocator>::erase(base_iterator<true>);
-        friend base_iterator<true> List<T, Allocator>::delete_node(base_iterator<true>);
 
-        template<bool>
-        friend class base_iterator;
     public:
     
         using pointer_type = std::conditional_t<IsConst, const T*, T*>;
@@ -39,15 +33,18 @@ private:
         using difference_type = std::ptrdiff_t;
         using value_type = T;
         using iterator_category = std::bidirectional_iterator_tag;
-        //using iterator_type = base_iterator;
     private:
-        BaseNode* ptr_;
+        friend class List<T, Allocator>;
         
-    public:
-        base_iterator(const BaseNode* ptr): ptr_(ptr) {}
-        base_iterator<true>(const base_iterator<false>& it) : ptr_(it.ptr_) {}
+        using base_node_pointer = std::conditional_t<IsConst, const BaseNode*, BaseNode*>;
+        using node_pointer = std::conditional_t<IsConst, const Node*, Node*>;
 
+        base_node_pointer ptr_;
+
+        base_iterator(base_node_pointer ptr): ptr_(ptr) {}
+    public:
         base_iterator(const base_iterator&) = default;
+
         base_iterator& operator=(const base_iterator& other) = default;
 
         bool operator==(const base_iterator& other) const {
@@ -88,6 +85,10 @@ private:
             while (n--) { --iter;}
             return iter;
         }
+
+        operator base_iterator<true>() const {
+            return {ptr_};
+        }
     };
 public:
     using const_iterator = base_iterator<true>;
@@ -112,12 +113,12 @@ public:
         return const_iterator{&fake_node_};
     }
 
-    const_iterator cbegin() {
+    const_iterator cbegin() const {
         return const_iterator{fake_node_.next};
     }
 
-    const_iterator cend() {
-        return const_iterator{end()};
+    const_iterator cend() const {
+        return const_iterator{&fake_node_};
     }
 
     // reverse_iterators
