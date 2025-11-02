@@ -1,5 +1,6 @@
-// List realization
-
+// List, SimpleAllocator, StackAllocator
+#include <utility>
+#include <array>
 #include <memory>
 #include <iostream>
 #include <iterator>
@@ -26,7 +27,6 @@ struct SimpleAllocator {
         new (ptr) U(std::forward<Args>(args)...);
     }
 
-    // for example list
     template <typename U>
     void destroy(U* ptr) {
         ptr->~U();
@@ -41,25 +41,25 @@ struct SimpleAllocator {
     };
 };
 
-
 template <typename T, size_t N>
 struct StackAllocator {
     using value_type = T;
 
-    StackAllocator(const StackStorage<N>& ) {}
+    StackAllocator(StackStorage<N>& pool) : pool_(pool) {}
 
     T* allocate(size_t count) {
         // execute the first part of operator new (return count * sizeof(T) bytes)
-        return operator new(count * sizeof(T));
+        //return operator new(count * sizeof(T));
+        return reinterpret_cast<T*>(pool_.begin()) + it_;
+        ++it_;
     }
     void deallocate(T* ptr, size_t) {
-        // execute the second part of operator delete (deallocate n bytes [count_of_bytes][[*ptr] buffer]) 
-        operator delete(ptr);
+        //operator delete(ptr);
     }
 
     template <typename U, typename... Args>
-    void construct(U* ptr, const Args&&... args) {
-        new (ptr) U(std::forward(args)...);
+    void construct(U* ptr, Args&&... args) {
+        new (ptr) U(std::forward<Args>(args)...);
     }
 
     // for example list
@@ -68,21 +68,29 @@ struct StackAllocator {
         ptr->~U();
     }
 
-    template <typename U, size_t Y>
-    StackAllocator(StackAllocator<U, Y>){}
+    template <typename U>
+    StackAllocator(const StackAllocator<U, N>& other) 
+        : it_(other.it_)
+        , pool_(other.pool_)
+    {}
 
     template <typename U>
     struct rebind {
         using other = StackAllocator<U, N>;
     };
+
+// TODO: max_size
+private:
+//TODO:
+public:
+    size_t it_ = 0;
+    StackStorage<N>& pool_;
 };
 
 
 template <typename T,
           typename Allocator = std::allocator<T>>
-class List {
-    using size_type = unsigned long long;
-    
+class List {    
     struct BaseNode {
         BaseNode* prev;
         BaseNode* next;
@@ -92,7 +100,7 @@ class List {
     };
 
     BaseNode fake_node_;
-    size_type sz_;
+    size_t sz_;
     [[no_unique_address]]
     typename std::allocator_traits<Allocator>::template rebind_alloc<Node> alloc_;
 
@@ -226,13 +234,12 @@ public:
         , sz_{0}
         , alloc_(alloc) {}
 
-    List(const List& other) {
-        // TODO: check yourself
-
-        this->fake_node_ = {&this->fake_node_, &this->fake_node_};
-        this->sz_ = 0;
-        this->alloc_ = other.alloc_;
-
+    List(const List& other) 
+        : fake_node_{&fake_node_, &fake_node_}
+        , sz_{0}
+        // propagate_on_copy_assignable
+        , alloc_(other.alloc_) {
+        
         for (const auto& el : other) {
             this->push_back(el);
         }
@@ -285,7 +292,7 @@ public:
         erase(cend() - 1);
     }
 
-    size_type size() const {
+    size_t size() const {
         return sz_;
     } 
 
