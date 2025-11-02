@@ -4,6 +4,80 @@
 #include <iostream>
 #include <iterator>
 
+template <size_t N>
+using StackStorage = std::array<char, N>;
+
+template <typename T>
+struct SimpleAllocator {
+    using value_type = T;
+    SimpleAllocator() = default;
+
+    T* allocate(size_t count) {
+        // execute the first part of operator new (return count * sizeof(T) bytes)
+        return static_cast<T*>(::operator new(count * sizeof(T)));
+    }
+    void deallocate(T* ptr, size_t) {
+        // execute the second part of operator delete (deallocate n bytes [count_of_bytes][[*ptr] buffer]) 
+        operator delete(ptr);
+    }
+
+    template <typename U, typename... Args>
+    void construct(U* ptr, Args&&... args) {
+        new (ptr) U(std::forward<Args>(args)...);
+    }
+
+    // for example list
+    template <typename U>
+    void destroy(U* ptr) {
+        ptr->~U();
+    }
+
+    template <typename U>
+    SimpleAllocator(SimpleAllocator<U>){}
+
+    template <typename U>
+    struct rebind {
+        using other = SimpleAllocator<U>;
+    };
+};
+
+
+template <typename T, size_t N>
+struct StackAllocator {
+    using value_type = T;
+
+    StackAllocator(const StackStorage<N>& ) {}
+
+    T* allocate(size_t count) {
+        // execute the first part of operator new (return count * sizeof(T) bytes)
+        return operator new(count * sizeof(T));
+    }
+    void deallocate(T* ptr, size_t) {
+        // execute the second part of operator delete (deallocate n bytes [count_of_bytes][[*ptr] buffer]) 
+        operator delete(ptr);
+    }
+
+    template <typename U, typename... Args>
+    void construct(U* ptr, const Args&&... args) {
+        new (ptr) U(std::forward(args)...);
+    }
+
+    // for example list
+    template <typename U>
+    void destroy(U* ptr) {
+        ptr->~U();
+    }
+
+    template <typename U, size_t Y>
+    StackAllocator(StackAllocator<U, Y>){}
+
+    template <typename U>
+    struct rebind {
+        using other = StackAllocator<U, N>;
+    };
+};
+
+
 template <typename T,
           typename Allocator = std::allocator<T>>
 class List {
