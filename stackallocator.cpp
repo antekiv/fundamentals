@@ -48,10 +48,8 @@ struct StackAllocator {
     StackAllocator(StackStorage<N>& pool) : pool_(pool) {}
 
     T* allocate(size_t count) {
-        // execute the first part of operator new (return count * sizeof(T) bytes)
-        //return operator new(count * sizeof(T));
-        return reinterpret_cast<T*>(pool_.begin()) + it_;
-        ++it_;
+        
+        return reinterpret_cast<T*>(pool_.begin()) + (it_++);
     }
     void deallocate(T* ptr, size_t) {
         //operator delete(ptr);
@@ -81,6 +79,7 @@ struct StackAllocator {
 
 // TODO: max_size
 private:
+    static constexpr size_t max_size = 0;
 //TODO:
 public:
     size_t it_ = 0;
