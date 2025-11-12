@@ -233,6 +233,17 @@ public:
         , sz_{0}
         , alloc_(alloc) {}
 
+     
+    explicit List(size_t count, const Allocator& alloc = Allocator()) 
+        : fake_node_{&fake_node_, &fake_node_}
+        , sz_{0}
+        , alloc_(alloc) {
+
+        for (size_t i = 0; i < count; ++i) {
+            insert(this->cend());
+        }        
+    }
+    
     List(const List& other) 
         : fake_node_{&fake_node_, &fake_node_}
         , sz_{0}
@@ -244,14 +255,20 @@ public:
         }
     }
 
-    ~List() {
-        BaseNode* node = fake_node_.next;
-        for (; node != end();) {
-            AllocTraits::destroy(alloc_, &(static_cast<Node*>(node)->value));
-            BaseNode* next_node = node->next;
-            AllocTraits::deallocate(alloc_, static_cast<Node*>(node), 1);
-            node = next_node;
+    List& operator=(const List& other) {
+        if (this != &other) {
+            
+            this->remove_all_elements();
+            
+            for (const auto& e : other) {
+                this->push_back(e);
+            }
         }
+        return *this;
+    }
+
+    ~List() {
+        remove_all_elements();
     }
 
     template <typename... Args>
@@ -269,7 +286,7 @@ public:
         insert(cend(), val);
     }
 
-    void  push_front(const T& val) {
+    void push_front(const T& val) {
         insert(cbegin(), val);
     }
 
@@ -331,4 +348,11 @@ private:
         new_node->next = pos;
         pos->prev = new_node;
     }
+
+    void remove_all_elements(){
+        auto it = begin();
+        while (it != end()) {
+            it = erase(cbegin());
+        }
+    } 
 };
