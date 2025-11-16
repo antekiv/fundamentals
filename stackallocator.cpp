@@ -45,11 +45,13 @@ template <typename T, size_t N>
 struct StackAllocator {
     using value_type = T;
 
-    StackAllocator(StackStorage<N>& pool) : pool_(pool) {}
+    StackAllocator(StackStorage<N>& pool) 
+        : block_num_(std::make_shared<size_t>(0))
+        , pool_(pool) {}
+
 
     T* allocate(size_t count) {
-        
-        return reinterpret_cast<T*>(pool_.begin()) + (it_++);
+        return reinterpret_cast<T*>(pool_.begin()) + ((*block_num_)++);
     }
     void deallocate(T* ptr, size_t) {
         //operator delete(ptr);
@@ -68,7 +70,7 @@ struct StackAllocator {
 
     template <typename U>
     StackAllocator(const StackAllocator<U, N>& other) 
-        : it_(other.it_)
+        : block_num_(other.block_num_)
         , pool_(other.pool_)
     {}
 
@@ -82,7 +84,7 @@ private:
     static constexpr size_t max_size = 0;
 //TODO:
 public:
-    size_t it_ = 0;
+    std::shared_ptr<size_t> block_num_;
     StackStorage<N>& pool_;
 };
 
