@@ -241,9 +241,14 @@ public:
         , sz_{0}
         , alloc_(alloc) {
 
-        for (size_t i = 0; i < count; ++i) {
-            insert(this->cend());
-        }        
+        try {
+            for (size_t i = 0; i < count; ++i) {
+                insert(this->cend());
+            }       
+        } catch (...) {
+            remove_all_elements();
+            throw;
+        }
     }
     
     List(const List& other) 
@@ -252,18 +257,32 @@ public:
         // propagate_on_copy_assignable
         , alloc_(other.alloc_) {
         
-        for (const auto& el : other) {
-            this->push_back(el);
+        try {
+            for (const auto& el : other) {
+                this->push_back(el);
+            }
+        } catch (...) {
+            remove_all_elements();
+            throw;
         }
     }
 
     List& operator=(const List& other) {
         if (this != &other) {
-            
-            this->remove_all_elements();
-            
-            for (const auto& e : other) {
-                this->push_back(e);
+            size_t size = sz_;
+            try {
+                for (const auto& e : other) {
+                    push_back(e);
+                }
+            } catch (...) {
+                while (this->size() != size)
+                    pop_back();
+
+                throw;
+            }
+
+            while (size--) {
+                pop_front();
             }
         }
         return *this;
