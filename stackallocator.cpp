@@ -41,6 +41,7 @@ struct SimpleAllocator {
     };
 };
 
+
 template <typename T, size_t N>
 struct StackAllocator {
     using value_type = T;
@@ -51,7 +52,15 @@ struct StackAllocator {
 
 
     T* allocate(size_t count) {
-        return reinterpret_cast<T*>(pool_.begin()) + ((*block_num_)++);
+        std::cout << "T: " << sizeof(T) << std::endl;
+        std::cout << "count: " << count << std::endl;
+        std::cout << "max size: " << max_size << std::endl;
+        std::cout << "block_num_: " << *block_num_ << std::endl;
+
+        if (*block_num_ > max_size)
+            return nullptr;
+
+        return reinterpret_cast<T*>(pool_.begin()) + count * ((*block_num_)++);
     }
     void deallocate(T* ptr, size_t) {
         //operator delete(ptr);
@@ -79,15 +88,12 @@ struct StackAllocator {
         using other = StackAllocator<U, N>;
     };
 
-// TODO: max_size
 private:
-    static constexpr size_t max_size = 0;
-//TODO:
+    static constexpr size_t max_size = N / sizeof(T);
 public:
     std::shared_ptr<size_t> block_num_;
     StackStorage<N>& pool_;
 };
-
 
 template <typename T,
           typename Allocator = std::allocator<T>>
@@ -241,6 +247,7 @@ public:
         , sz_{0}
         , alloc_(alloc) {
 
+        // another try? 
         try {
             for (size_t i = 0; i < count; ++i) {
                 insert(this->cend());
