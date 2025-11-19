@@ -47,20 +47,27 @@ struct StackAllocator {
     using value_type = T;
 
     StackAllocator(StackStorage<N>& pool) 
-        : block_num_(std::make_shared<size_t>(0))
+        : offset_(std::make_shared<size_t>(0))
         , pool_(pool) {}
 
 
     T* allocate(size_t count) {
-        std::cout << "T: " << sizeof(T) << std::endl;
+ /*       std::cout << "T: " << sizeof(T) << std::endl;
         std::cout << "count: " << count << std::endl;
-        std::cout << "max size: " << max_size << std::endl;
-        std::cout << "block_num_: " << *block_num_ << std::endl;
+        std::cout << "N: " << N << std::endl;
+        std::cout << "offset_: " << *offset_ << std::endl;*/
 
-        if (*block_num_ > max_size)
+        size_t bytes_needed = count * sizeof(T);
+        // Выравнивание для типа T
+        size_t alignment = alignof(T);
+        size_t aligned_offset = (*offset_ + alignment - 1) / alignment * alignment;
+        
+        if (aligned_offset + bytes_needed > N)
             return nullptr;
 
-        return reinterpret_cast<T*>(pool_.begin()) + count * ((*block_num_)++);
+        T* result = reinterpret_cast<T*>(pool_.data() + aligned_offset);
+        *offset_ = aligned_offset + bytes_needed;
+        return result;
     }
     void deallocate(T* ptr, size_t) {
         //operator delete(ptr);
@@ -79,7 +86,7 @@ struct StackAllocator {
 
     template <typename U>
     StackAllocator(const StackAllocator<U, N>& other) 
-        : block_num_(other.block_num_)
+        : offset_(other.offset_)
         , pool_(other.pool_)
     {}
 
@@ -89,9 +96,8 @@ struct StackAllocator {
     };
 
 private:
-    static constexpr size_t max_size = N / sizeof(T);
 public:
-    std::shared_ptr<size_t> block_num_;
+    std::shared_ptr<size_t> offset_;  // смещение в байтах
     StackStorage<N>& pool_;
 };
 
