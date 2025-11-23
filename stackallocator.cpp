@@ -47,27 +47,15 @@ struct StackAllocator {
     using value_type = T;
 
     StackAllocator(StackStorage<N>& pool) 
-        : offset_(std::make_shared<size_t>(0))
-        , pool_(pool) {}
-
+        : ptr_(std::make_shared<void*>(pool.begin())) {}
 
     T* allocate(size_t count) {
- /*       std::cout << "T: " << sizeof(T) << std::endl;
-        std::cout << "count: " << count << std::endl;
-        std::cout << "N: " << N << std::endl;
-        std::cout << "offset_: " << *offset_ << std::endl;*/
-
         size_t bytes_needed = count * sizeof(T);
-        // Выравнивание для типа T
         size_t alignment = alignof(T);
-        size_t aligned_offset = (*offset_ + alignment - 1) / alignment * alignment;
-        
-        if (aligned_offset + bytes_needed > N)
-            return nullptr;
 
-        T* result = reinterpret_cast<T*>(pool_.data() + aligned_offset);
-        *offset_ = aligned_offset + bytes_needed;
-        return result;
+        T* alignmend_ptr = reinterpret_cast<T*>(std::align(alignment, bytes_needed, *ptr_, *space_remaining_));
+        *ptr_ = alignmend_ptr + bytes_needed;
+        return alignmend_ptr;
     }
     void deallocate(T* ptr, size_t) {
         //operator delete(ptr);
@@ -86,8 +74,8 @@ struct StackAllocator {
 
     template <typename U>
     StackAllocator(const StackAllocator<U, N>& other) 
-        : offset_(other.offset_)
-        , pool_(other.pool_)
+        : ptr_(other.ptr_)
+        , space_remaining_(other.space_remaining_)
     {}
 
     template <typename U>
@@ -97,8 +85,9 @@ struct StackAllocator {
 
 private:
 public:
-    std::shared_ptr<size_t> offset_;  // смещение в байтах
-    StackStorage<N>& pool_;
+    // std::byte?
+    std::shared_ptr<void*> ptr_;
+    std::shared_ptr<size_t> space_remaining_ = std::make_shared<size_t>(N);
 };
 
 template <typename T,
