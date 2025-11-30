@@ -50,13 +50,14 @@ struct StackAllocator {
         : ptr_(std::make_shared<void*>(pool.begin())) {}
 
     T* allocate(size_t count) {
-        size_t bytes_needed = count * sizeof(T);
-        size_t alignment = alignof(T);
+        const size_t bytes_needed = count * sizeof(T);
+        const size_t alignment = alignof(T);
 
-        T* alignmend_ptr = reinterpret_cast<T*>(std::align(alignment, bytes_needed, *ptr_, *space_remaining_));
-        *ptr_ = alignmend_ptr + bytes_needed;
-        return alignmend_ptr;
+        void* aligned_ptr = reinterpret_cast<T*>(std::align(alignment, bytes_needed, *ptr_, *space_remaining_));
+        *ptr_ = static_cast<char*>(aligned_ptr) + bytes_needed;
+        return static_cast<T*>(aligned_ptr);
     }
+   
     void deallocate(T* ptr, size_t) {
         //operator delete(ptr);
     }
@@ -66,7 +67,6 @@ struct StackAllocator {
         new (ptr) U(std::forward<Args>(args)...);
     }
 
-    // for example list
     template <typename U>
     void destroy(U* ptr) {
         ptr->~U();
@@ -83,16 +83,13 @@ struct StackAllocator {
         using other = StackAllocator<U, N>;
     };
 
-private:
-public:
-    // std::byte?
     std::shared_ptr<void*> ptr_;
     std::shared_ptr<size_t> space_remaining_ = std::make_shared<size_t>(N);
 };
 
 template <typename T,
           typename Allocator = std::allocator<T>>
-class List {    
+class List {  
     struct BaseNode {
         BaseNode* prev;
         BaseNode* next;
@@ -100,11 +97,13 @@ class List {
     struct Node : BaseNode {
         T value;
     };
+    using NodeAlloc = typename std::allocator_traits<Allocator>::template rebind_alloc<Node>;  
+    using AllocTraits = std::allocator_traits<NodeAlloc>;
 
+    [[no_unique_address]]
+    NodeAlloc alloc_;
     BaseNode fake_node_;
     size_t sz_;
-    [[no_unique_address]]
-    typename std::allocator_traits<Allocator>::template rebind_alloc<Node> alloc_;
 
 private:
     template <bool IsConst>
@@ -115,7 +114,7 @@ private:
         using pointer_type = std::conditional_t<IsConst, const T*, T*>;
         using reference_type = std::conditional_t<IsConst, const T&, T&>;
         using value_type = std::conditional_t<IsConst, const T, T>;
-
+        
     private:
         friend class List<T, Allocator>;
         
@@ -230,19 +229,16 @@ public:
     }
 
 public:
-    using AllocTraits = std::allocator_traits<decltype(alloc_)>;
     explicit List(const Allocator& alloc = Allocator()) 
-        : fake_node_{&fake_node_, &fake_node_}
-        , sz_{0}
-        , alloc_(alloc) {}
-
+        : alloc_(alloc)
+        , fake_node_{&fake_node_, &fake_node_}
+        , sz_{0} {}
      
     explicit List(size_t count, const Allocator& alloc = Allocator()) 
-        : fake_node_{&fake_node_, &fake_node_}
-        , sz_{0}
-        , alloc_(alloc) {
+        : alloc_(alloc)    
+        , fake_node_{&fake_node_, &fake_node_}
+        , sz_{0} {
 
-        // another try? 
         try {
             for (size_t i = 0; i < count; ++i) {
                 insert(this->cend());
@@ -254,11 +250,10 @@ public:
     }
     
     List(const List& other) 
-        : fake_node_{&fake_node_, &fake_node_}
-        , sz_{0}
-        // propagate_on_copy_assignable
-        , alloc_(other.alloc_) {
-        
+        : alloc_(AllocTraits::select_on_container_copy_construction(other.alloc_))
+        , fake_node_{&fake_node_, &fake_node_}
+        , sz_{0} {
+    
         try {
             for (const auto& el : other) {
                 this->push_back(el);
@@ -271,6 +266,11 @@ public:
 
     List& operator=(const List& other) {
         if (this != &other) {
+            auto old_alloc = alloc_;
+            alloc_ = AllocTraits::propagate_on_container_copy_assignment::value
+                ? other.alloc_
+                : alloc_;
+
             size_t size = sz_;
             try {
                 for (const auto& e : other) {
@@ -280,6 +280,7 @@ public:
                 while (this->size() != size)
                     pop_back();
 
+                alloc_ = old_alloc;
                 throw;
             }
 
@@ -334,6 +335,10 @@ public:
     size_t size() const {
         return sz_;
     } 
+
+    Allocator get_allocator() const {
+        return Allocator(alloc_);
+    }
 
 private:
     template <typename... Args>
