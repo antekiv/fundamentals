@@ -28,6 +28,7 @@ class Tuple<Head, Tail...> {
     template <size_t N, typename... Types>
     friend decltype(auto) get(Tuple<Types...>&);
 public:
+
     Tuple(const Head& head, const Tail&... tail)
         : head_(head)
         , tail_(tail...) 
@@ -44,7 +45,17 @@ public:
     )
     Tuple(UHead&& head, UTail&&... tail)
         : head_(std::forward<UHead>(head))
-        , tail_(std::forward<UTail>(tail)...) 
+        , tail_(std::forward<UTail>(tail)...)
+    {}
+
+    template <typename UHead, typename... UTail>
+    explicit( 
+        ! (std::is_convertible_v<UHead, Head> && 
+          (std::is_convertible_v<UTail, Tail> && ...))
+    )
+    Tuple(const Tuple<UHead, UTail...>& other)
+        : head_(other.head)
+        , tail_(other.tail) 
     {}
 };
 
