@@ -27,25 +27,35 @@ class Tuple<Head, Tail...> {
     Head head_;
     [[no_unique_address]] Tuple<Tail...> tail_;
 
-    // and 3 overloads :thinking:
-    template <size_t N, typename... Types>
-    friend decltype(auto) get(Tuple<Types...>&);
+    template <size_t, typename... Types>
+    constexpr friend decltype(auto) get(Tuple<Types...>&);
+    template <size_t, typename... Types>
+    constexpr friend decltype(auto) get(const Tuple<Types...>&);
+    template <size_t, typename... Types>
+    constexpr friend decltype(auto) get(Tuple<Types...>&&);
+    template <typename, typename... Types>
+    constexpr friend decltype(auto) get(Tuple<Types...>& t);
 
-    template <typename... UTypes>
+    template <typename...>
     friend struct Tuple;
 public:
 
     Tuple() = default;
-    Tuple(const Tuple&) = default;
-    Tuple(Tuple&&) = default;
+    Tuple(const Tuple& other) = default;
+
+    Tuple(Tuple&& other)
+        : head_(std::forward<Head>(other.head_))
+        , tail_(std::move(other.tail_)) 
+    {}
     
     explicit (
         ! (std::is_convertible_v<const Head&, Head> &&
           (std::is_convertible_v<const Tail&, Tail> && ...))
     )
     Tuple(const Head& head, const Tail&... tail)
-        requires (std::is_copy_constructible_v<Head>
-              && (std::is_copy_constructible_v<Tail> && ...))
+        requires (
+             std::is_copy_constructible_v<Head> &&
+            (std::is_copy_constructible_v<Tail> && ...))
         : head_(head)
         , tail_(tail...) 
     {}
@@ -69,8 +79,8 @@ public:
     template <typename UHead, typename... UTail>
     requires (
         sizeof...(Tail) == sizeof...(UTail) &&
-        std::is_constructible_v<Head, const UHead&> &&
-       (std::is_constructible_v<Tail, const UTail&> && ...)
+        std::is_constructible_v<Head, UHead> &&
+       (std::is_constructible_v<Tail, UTail> && ...)
     )
     explicit ( 
         ! (std::is_convertible_v<UHead, Head> && 
@@ -84,8 +94,8 @@ public:
     template <typename UHead, typename... UTail>
     requires (
         sizeof...(Tail) == sizeof...(UTail) &&
-        std::is_constructible_v<Head, UHead&&> &&
-       (std::is_constructible_v<Tail, UTail&&> && ...)
+        std::is_constructible_v<Head, UHead> &&
+       (std::is_constructible_v<Tail, UTail> && ...)
     )
     explicit( 
         ! (std::is_convertible_v<UHead, Head> && 
@@ -95,6 +105,30 @@ public:
         : head_(std::forward<UHead>(other.head_))
         , tail_(std::move(other.tail_)) 
     {}
+
+    template <typename UHead, typename... UTail>
+    requires (
+        sizeof...(Tail) == sizeof...(UTail) &&
+        std::is_assignable_v<Head&, const UHead&> &&
+    (std::is_assignable_v<Tail&, const UTail&> && ...)
+    )
+    Tuple& operator=(const Tuple<UHead, UTail...>& other) {
+        head_ = other.head_;
+        tail_ = other.tail_;
+        return *this;
+    }
+
+    template <typename UHead, typename... UTail>
+    requires (
+         sizeof...(Tail) == sizeof...(UTail) &&
+         std::is_assignable_v<Head&, UHead&&> &&
+        (std::is_assignable_v<Tail&, UTail&&> && ...)
+    )
+    Tuple& operator=(Tuple<UHead, UTail...>&& other) {
+        head_ = std::forward<UHead>(other.head_);
+        tail_ = std::move(other.tail_);
+        return *this;
+    }
 
     Tuple& operator=(const Tuple& other)
     requires (
@@ -111,7 +145,7 @@ public:
          std::is_move_assignable_v<Head> &&
         (std::is_move_assignable_v<Tail> && ...)
     ) {
-        head_ = std::forward<Head>(other.head_);
+        head_ = std::move(other.head_);
         tail_ = std::move(other.tail_);
 
         return *this;
@@ -119,15 +153,44 @@ public:
 };
 
 template <size_t N, typename... Types>
-decltype(auto) get(Tuple<Types...>& t) {
+constexpr decltype(auto) get(const Tuple<Types...>& t) {
+    if constexpr (N == 0) {
+        return (t.head_); 
+    } else {
+        return get<N - 1>(t.tail_);
+    }
+}
+
+template <size_t N, typename... Types>
+constexpr decltype(auto) get(Tuple<Types...>& t) {
     if constexpr (N == 0) {
         // t.head_ — is an access to the field. decltype(t.head_) returns type of the field (for example T).
         // (t.head_) — is expression. decltype((t.head_)) for lvalue returns reference (T&).
-        return (t.head_);
+        using FieldType = decltype(t.head_);
+        return static_cast<FieldType&>(t.head_);
     } else {
-        return get<N-1>(t.tail_);
+        return get<N - 1>(t.tail_);
     }
 }
+
+template <size_t N, typename... Args>
+constexpr decltype(auto) get(Tuple<Args...>&& t) {
+    if constexpr (N == 0) {
+        return std::move(t.head_);
+    } else {
+        return get<N - 1>(std::move(t.tail_));
+    }
+}
+
+template <typename T, typename... Types>
+constexpr decltype(auto) get(Tuple<Types...>& t) {
+    if constexpr (std::is_same_v<T, decltype(t.head_)>) {
+        return (t.head_); 
+    } else {
+        return get<T>(t.tail_);
+    }
+}
+
 
 template <typename... Types>
 struct tuple_size;
