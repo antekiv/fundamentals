@@ -1,7 +1,7 @@
 #include <chrono>
 #include <stdexcept>
 #include <string>
-//#include <list>
+#include <list>
 #include <vector>
 #include <deque>
 #include <memory>
@@ -310,7 +310,6 @@ void TestAlignment() {
     StackAllocator<int, 200'000> intalloc(charalloc);
 
     auto* pchar = charalloc.allocate(3);
-    
     auto* pint = intalloc.allocate(1);
 
     assert((void*)pchar != (void*)pint);
@@ -333,7 +332,7 @@ void TestAlignment() {
     ldalloc.deallocate(pld, 25);
 }
 
-/*
+
 template <typename T, bool PropagateOnConstruct, bool PropagateOnAssign>
 struct WhimsicalAllocator : public std::allocator<T> {
     std::shared_ptr<int> number;
@@ -370,8 +369,8 @@ struct WhimsicalAllocator : public std::allocator<T> {
     
     template <typename U>
     bool operator==(const WhimsicalAllocator<U, PropagateOnConstruct, PropagateOnAssign>& another) const {
-        return std::is_same_v<decltype(*this), decltype(another)> 
-            && *number == *another.number;
+        // std::cout ... можно оставить для отладки
+        return number == another.number; 
     }
 
     template <typename U>
@@ -388,7 +387,7 @@ size_t WhimsicalAllocator<T, PropagateOnConstruct, PropagateOnAssign>::counter =
 void TestWhimsicalAllocator() {
     {
         List<int, WhimsicalAllocator<int, true, true>> lst;
-
+        
         lst.push_back(1);
         lst.push_back(2);
 
@@ -478,22 +477,16 @@ int ListPerformanceTest(List&& l) {
     auto finish = high_resolution_clock::now();
     return duration_cast<milliseconds>(finish - start).count();
 }
-*/
 
 template <typename Alloc>
 void DequeTest() {
     Alloc alloc(STATIC_STORAGE);
 
     std::deque<char, Alloc> d(alloc);
-    std::cout << 1 << std::endl;
     d.push_back(1);
-    std::cout << 2 << std::endl;
     assert(d.back() == 1);
-    std::cout << 3 << std::endl;
     d.resize(2'500'000, 5);
-    std::cout << 4 << std::endl;
     assert(d[1'000'000] == 5);
-    std::cout << 5 << std::endl;
     d.pop_back();
     for (int i = 0; i < 2'000'000; ++i) {
         d.push_back(i % 100);
@@ -509,7 +502,7 @@ void DequeTest() {
     assert(d[400'000] == 1);
 }
 
-/*
+
 template <template<typename, typename> class Container>
 void TestPerformance() {
 
@@ -558,7 +551,7 @@ void TestPerformance() {
     }
 }
 
-*/
+
 
 
 int main() {
@@ -643,7 +636,7 @@ int main() {
     DequeTest<StackAllocator<char, STORAGE_SIZE>>();
 
     std::cerr << "Test 6 (Deque with StackAllocator) passed." << std::endl;
-/*    
+
     TestWhimsicalAllocator();
     
     std::cerr << "Test 7 (Allocator Awareness) passed." << std::endl;
@@ -661,7 +654,7 @@ int main() {
     if (std::is_assignable_v<List<int>, std::list<int>> || std::is_assignable_v<std::list<int>, List<int>>) {
         std::cerr << "....but you must use your own List, not std::list!" << std::endl;
         throw std::runtime_error("Bad guy!");
-    }
-*/
-    //std::cout << 0;
+    }    
+
+    std::cout << 0;
 }

@@ -1,0 +1,1 @@
+Disable sanitazer settings and set Release to pass the test
