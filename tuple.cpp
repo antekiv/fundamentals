@@ -15,6 +15,7 @@ struct tuple : tuple<Tail...>{
     Head head_;
 };
 */
+struct tuple_cat_tag {};
 
 template <typename... Types>
 struct Tuple;
@@ -35,6 +36,15 @@ class Tuple<Head, Tail...> {
     constexpr friend decltype(auto) get(Tuple<Types...>&&);
     template <typename, typename... Types>
     constexpr friend decltype(auto) get(Tuple<Types...>& t);
+    template <typename, typename... Types>
+    constexpr friend decltype(auto) get(const Tuple<Types...>& t);
+    template <typename, typename... Types>
+    constexpr friend decltype(auto) get(Tuple<Types...>&& t);
+    template <typename, typename... Types>
+    constexpr friend decltype(auto) get(const Tuple<Types...>&& t);
+
+    template <typename H, typename... T, typename... U>
+    friend auto tupleCat(Tuple<H, T...>&& t, Tuple<U...>&& u);
 
     template <typename...>
     friend struct Tuple;
@@ -110,7 +120,7 @@ public:
     requires (
         sizeof...(Tail) == sizeof...(UTail) &&
         std::is_assignable_v<Head&, const UHead&> &&
-    (std::is_assignable_v<Tail&, const UTail&> && ...)
+        (std::is_assignable_v<Tail&, const UTail&> && ...)
     )
     Tuple& operator=(const Tuple<UHead, UTail...>& other) {
         head_ = other.head_;
@@ -150,6 +160,13 @@ public:
 
         return *this;
     }
+
+    // TODO: c-tors from std::pair
+public:
+    Tuple(Head h, Tuple<Tail...>&& t)
+        : head_(std::move(h))
+        , tail_(std::move(t)) 
+    {}
 };
 
 template <size_t N, typename... Types>
@@ -185,12 +202,45 @@ constexpr decltype(auto) get(Tuple<Args...>&& t) {
 template <typename T, typename... Types>
 constexpr decltype(auto) get(Tuple<Types...>& t) {
     if constexpr (std::is_same_v<T, decltype(t.head_)>) {
-        return (t.head_); 
+        using FieldType = decltype(t.head_);
+        return static_cast<FieldType&>(t.head_);
     } else {
         return get<T>(t.tail_);
     }
 }
 
+template <typename T, typename... Types>
+constexpr decltype(auto) get(const Tuple<Types...>& t) {
+    if constexpr (std::is_same_v<T, decltype(t.head_)>) {
+        using FieldType = decltype(t.head_);
+        return static_cast<const FieldType&>(t.head_);
+    } else {
+        return get<T>(t.tail_);
+    }
+}
+
+template <typename T, typename... Types>
+constexpr decltype(auto) get(Tuple<Types...>&& t) {
+    if constexpr (std::is_same_v<T, decltype(t.head_)>) {
+        return std::forward<decltype(t.head_)>(t.head_);
+    } else {
+        return get<T>(std::move(t.tail_));
+    }
+}
+
+template <typename T, typename... Types>
+constexpr decltype(auto) get(const Tuple<Types...>&& t) {
+    if constexpr (std::is_same_v<T, decltype(t.head_)>) {
+        return std::forward<const decltype(t.head_)>(t.head_);
+    } else {
+        return get<T>(std::move(t.tail_));
+    }
+}
+
+template <typename... Args>
+decltype(auto) makeTuple(Args&&... args) {
+    return Tuple<Args...>(std::forward<Args>(args)...);
+} 
 
 template <typename... Types>
 struct tuple_size;
@@ -207,3 +257,5 @@ template <size_t I, typename Tuple>
 struct tuple_element {
     using type = decltype(get<I>(std::declval<Tuple&>()));
 };
+
+// TODO: tupleCat
