@@ -44,8 +44,6 @@ struct SimpleAllocator {
 
 template <typename T, size_t N>
 struct StackAllocator {
-    using value_type = T;
-
     StackAllocator(StackStorage<N>& pool) 
         : ptr_(std::make_shared<void*>(pool.begin())) {}
 
@@ -83,6 +81,7 @@ struct StackAllocator {
         using other = StackAllocator<U, N>;
     };
 
+private:
     std::shared_ptr<void*> ptr_;
     std::shared_ptr<size_t> space_remaining_ = std::make_shared<size_t>(N);
 };

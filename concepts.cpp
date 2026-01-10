@@ -3,6 +3,21 @@
 #include <type_traits>
 #include <vector> 
 
+// Types of requires
+
+// 1. simple require - checks bool expression
+// require a == b || std::is_arifmetic..
+
+// 2. nested require - checks only compilation!!!
+// require require (T a) {
+//      a++;
+//      a == a;
+
+// 3. Type requiment
+//      typename T::value_type;
+// }
+
+
 // concepts (since c++20)
 struct MyInt {
     int i;
