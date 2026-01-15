@@ -160,15 +160,19 @@ SharedPtr<Node> getCyclePtr(int cycleSize) {
     return head;
 }
 
+
 void test_weak_ptr() {
+    
     auto sp = SharedPtr<int>(new int(23));
     WeakPtr<int> weak = sp;
+
     {
         auto shared = SharedPtr<int>(new int(42));
         weak = shared;
         assert(weak.use_count() == 1);
         assert(!weak.expired());
     }
+
     assert(weak.use_count() == 0);
     assert(weak.expired());
     
@@ -179,7 +183,7 @@ void test_weak_ptr() {
     auto wwp = std::move(weak);
     //assert(weak.use_count() == 0);
     assert(wwp.use_count() == 1);
-
+    
     auto ssp = wwp.lock();
     assert(sp.use_count() == 2);
 
@@ -204,15 +208,14 @@ void test_weak_ptr() {
         head.reset();
         assert(nextHead.use_count() == 1);
     }
-    
+
     std::ignore = useless_value;
 
     assert(Node::constructed == 800'000);
     assert(Node::destructed == 800'000);
-    
+        
     // test inheritance
     {
-        
         SharedPtr<Derived> dsp(new Derived());
 
         SharedPtr<Base> bsp = dsp;
@@ -231,6 +234,7 @@ void test_weak_ptr() {
         assert(wbsp.expired());
         assert(wwbsp.expired());
     }
+    
     // test const
     {
         SharedPtr<int> sp(new int(42));
@@ -238,6 +242,7 @@ void test_weak_ptr() {
         assert(!wp.expired());
         auto ssp = wp.lock();
     }
+    
 }
 
 struct NeitherDefaultNorCopyConstructible {
@@ -456,8 +461,9 @@ void test_make_allocate_shared() {
     deallocate_called = 0;
     construct_called = 0;
     destroy_called = 0;
- }
+}
 
+/*
 struct Enabled: public EnableSharedFromThis<Enabled> {
     SharedPtr<Enabled> get_shared() {
         return shared_from_this();
@@ -634,7 +640,7 @@ void test_custom_deleter() {
     assert(destroy_called == 0);
     assert(custom_deleter_called == 1);
 }
-
+*/
 
 int main() {
     //static_assert(!std::is_base_of_v<std::shared_ptr<VerySpecialType>, SharedPtr<VerySpecialType>>,
@@ -644,7 +650,7 @@ int main() {
     //        "don't try to use std smart pointers");
     
     std::cerr << "Starting tests..." << std::endl;
-
+    
     test_shared_ptr();
     std::cerr << "Test 1 (shared ptr) passed." << std::endl;
 

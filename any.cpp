@@ -1,5 +1,6 @@
 #include <iostream>
 // type eraasure 
+/*
 class any {
     struct Base {
         virtual Base* getCopy() const = 0;
@@ -42,9 +43,41 @@ T& any_cast(any& a) {
 
     return p->value_;
 }
+*/
+
+
+class any {
+    struct Base {
+         virtual ~Base() = 0;
+    };
+    
+
+    template <typename T>
+    struct Derived : Base {
+        T value_;
+        Derived(const T& value) : value_(value) {}
+        Derived(T&& value) : value_(std::move(value)) {}
+        ~Derived() = default; //override { std::cout << "~Derived" << std::endl;}
+    };
+
+    Base* ptr_;
+    
+public:
+    template <typename T>
+    any(const T& value) : ptr_(new Derived<T>(value)) {}
+    
+    ~any() {
+        delete ptr_;
+    }
+};
+
+inline any::Base::~Base() {}
 
 int main() {
-    // 47.40:00 Allocators
-    std::cout << sizeof(any) << std::endl;
-    std::cout << "Hello Any World!" << std::endl;
+    
+    any a1(4);
+    any a2(std::string("string"));
+    any a3(3.14);
+
+    return 0;
 }
