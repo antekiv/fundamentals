@@ -143,21 +143,19 @@ public:
         return *this;
     }
 
-    /*
     template <typename U>
     requires std::is_convertible_v<U*, T*>
     SharedPtr& operator=(SharedPtr<U>&& other) noexcept {
         swap(SharedPtr());
 
         value_ptr_ = static_cast<T*>(other.value_ptr_);
-        ctrl_block_ptr_ = reinterpret_cast<VirtualControlBlockBase<T>*>(other.ctrl_block_ptr_);
+        ctrl_block_ptr_ = other.ctrl_block_ptr_;
 
         other.value_ptr_ = nullptr;
         other.ctrl_block_ptr_ = nullptr;
 
         return *this;
     }
-    */
 
     ~SharedPtr() {
         if (!ctrl_block_ptr_)
@@ -212,8 +210,8 @@ private:
         ++ctrl_block_ptr_->shared_count_;
     }
 
-    SharedPtr(VirtualControlBlockBase* ctrl_block_ptr) 
-            : value_ptr_(ctrl_block_ptr->value_ptr_)
+    SharedPtr(T* value_ptr, VirtualControlBlockBase* ctrl_block_ptr) 
+            : value_ptr_(value_ptr)
             , ctrl_block_ptr_(ctrl_block_ptr) {
         if (ctrl_block_ptr)
             ++ctrl_block_ptr_->shared_count_;
@@ -265,6 +263,7 @@ class WeakPtr {
     using InnerCtrlBlock = VirtualControlBlockBase;
 
     InnerCtrlBlock* ctrl_block_ptr_;
+    T* value_ptr_;
 
     template <typename U>
     friend class WeakPtr;
@@ -273,12 +272,14 @@ class WeakPtr {
     friend class SharedPtr;
 public:
     WeakPtr(const SharedPtr<T>& shared_ptr = SharedPtr<T>())
-            : ctrl_block_ptr_(shared_ptr.ctrl_block_ptr_) {
+            : ctrl_block_ptr_(shared_ptr.ctrl_block_ptr_)
+            , value_ptr_(shared_ptr.value_ptr_) {
         if (ctrl_block_ptr_)
             ++(ctrl_block_ptr_->weak_count_);
     }
     WeakPtr(const WeakPtr<T>& other)
-            : ctrl_block_ptr_(other.ctrl_block_ptr_) {
+            : ctrl_block_ptr_(other.ctrl_block_ptr_)
+            , value_ptr_(other.value_ptr_) {
         if (ctrl_block_ptr_)
             ++(ctrl_block_ptr_->weak_count_);
     }
@@ -286,21 +287,25 @@ public:
     template <typename U>
     requires std::is_convertible_v<U*, T*>
     WeakPtr(const WeakPtr<U>& other)
-            : ctrl_block_ptr_(reinterpret_cast<InnerCtrlBlock*>(other.ctrl_block_ptr_)) {
+            : ctrl_block_ptr_(other.ctrl_block_ptr_)
+            , value_ptr_(other.value_ptr_) {
         if (ctrl_block_ptr_)
             ++(ctrl_block_ptr_->weak_count_);
     }
     template <typename U>
     requires std::is_convertible_v<U*, T*>
     WeakPtr(const SharedPtr<U>& other)
-            : ctrl_block_ptr_(reinterpret_cast<InnerCtrlBlock*>(other.ctrl_block_ptr_)) {
+            : ctrl_block_ptr_(other.ctrl_block_ptr_)
+            , value_ptr_(other.value_ptr_) {
         if (ctrl_block_ptr_)
             ++(ctrl_block_ptr_->weak_count_);
     }
     
     WeakPtr(WeakPtr<T>&& other)
-            : ctrl_block_ptr_(other.ctrl_block_ptr_) {
+            : ctrl_block_ptr_(other.ctrl_block_ptr_)
+            , value_ptr_(other.value_ptr_) {
         other.ctrl_block_ptr_ = nullptr;
+        other.value_ptr_ = nullptr;
     }
 
     WeakPtr& operator=(const SharedPtr<T>& shared_ptr) {
@@ -313,7 +318,8 @@ public:
         if (!ctrl_block_ptr_)
             return;
 
-        if (--ctrl_block_ptr_->weak_count_ == 0) {
+        if (--ctrl_block_ptr_->weak_count_ == 0 
+           && ctrl_block_ptr_->shared_count_ == 0) {
             ctrl_block_ptr_->destroy();
         }
     }
@@ -340,6 +346,7 @@ public:
 
     void swap(WeakPtr&& other) {
         std::swap(ctrl_block_ptr_, other.ctrl_block_ptr_);
+        std::swap(value_ptr_, other.value_ptr_);
     }
 };
 
