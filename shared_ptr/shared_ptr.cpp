@@ -4,46 +4,86 @@
 template <typename T>
 struct EnableSharedFromThis;
 
-// TODO: add to all a delegate c-tor
-template <typename T, typename Deleter = std::default_delete<T>>
-class SharedPtr {
-
-    // Two ways to construct:
-    // 1. ctor:
-    //    T* -> T
-    //    ctrlBlock_* -> CtrlBlock
-    //
-    // 2. make_shared:
-    //    T* -> T
-    //    ctrlBlock_* -> CtrlBlockWithObject
-    //    it means that counters lay before T (CtrlBlockWithObject)
-    struct Counter {
-        size_t shared_count_ = 0;
+namespace {
+    struct VirtualControlBlockBase {
+        size_t shared_count_ = 1;
         size_t weak_count_   = 0;
+        
+        virtual ~VirtualControlBlockBase() = default;
+        virtual void dispose() = 0;
+        virtual void destroy() = 0;
+    };
+}
+// TODO: add to all a delegate c-tor
+template <typename T>
+class SharedPtr {
+    template <typename U, typename UDel, typename UAlloc>
+    struct CtrlBlock : public VirtualControlBlockBase {
+        U* value_ptr_;
+        [[no_unique_address]] UDel deleter_;
+        [[no_unique_address]] UAlloc alloc_;
+
+        CtrlBlock(U* ptr, UDel del = std::default_delete<T>(), UAlloc alloc = std::allocator<T>())
+            : value_ptr_(ptr)
+            , deleter_(std::move(del))
+            , alloc_(std::move(alloc)) {}
+
+        void dispose() override {
+            deleter_(value_ptr_);
+        }
+
+        void destroy() override {
+            using AllocTraits = std::allocator_traits<UAlloc>;
+            using BlockAlloc = typename AllocTraits::template rebind_alloc<CtrlBlock>;
+            using BlockTraits = std::allocator_traits<BlockAlloc>;
+
+            BlockAlloc ba = alloc_;
+            this->~CtrlBlock();
+            BlockTraits::deallocate(ba, this, 1);
+        }
     };
 
-    template <typename U>
-    struct CtrlBlock : Counter {
-        [[no_unique_address]] 
-        Deleter deleter_      = std::default_delete<T>();
-        U*     value_ptr_     = nullptr;
-    };
-
-    template <typename U>
-    struct CtrlBlockWithObject : CtrlBlock<U> {
+    template <typename U, typename UAlloc>
+    struct CtrlBlockMakeShared : public VirtualControlBlockBase {
         U value_;
+        [[no_unique_address]] UAlloc alloc_;
+
+        CtrlBlockMakeShared(const U& value, UAlloc alloc = std::allocator<U>())
+            : value_(value)
+            , alloc_(std::move(alloc)) {}
+
+        CtrlBlockMakeShared(U&& value, UAlloc alloc = std::allocator<U>())
+            : value_(std::move(value))
+            , alloc_(std::move(alloc)) {}
+
+        void dispose() override {
+            std::allocator_traits<UAlloc>::destroy(alloc_, &value_);
+        }
+
+        void destroy() override {
+            using AllocTraits = std::allocator_traits<UAlloc>;
+            using BlockAlloc = typename AllocTraits::template rebind_alloc<CtrlBlockMakeShared>;
+            BlockAlloc ba = alloc_;
+            this->~CtrlBlockHolder();
+            AllocTraits::deallocate(ba, this, 1);
+        }
+        
+        ~CtrlBlockMakeShared() {
+            // Пустой деструктор, так как T разрушается в dispose()
+        }
     };
 
-    T*            value_ptr_      = nullptr;
-    CtrlBlock<T>* ctrl_block_ptr_ = nullptr;
+    T*                       value_ptr_      = nullptr;
+    VirtualControlBlockBase* ctrl_block_ptr_ = nullptr;
  
+
     template <typename U, typename... Args>
     friend SharedPtr<U> makeShared(Args&&...);
 
     template<typename U, typename Alloc, typename... Args>
     friend SharedPtr<U> allocateShared(const Alloc& alloc, Args&&... args);
 
-    template <typename U, typename DelU>
+    template <typename U>
     friend class SharedPtr;
 
     template <typename Y>
@@ -55,17 +95,17 @@ public:
 
     SharedPtr(T* ptr)
             : value_ptr_(ptr)
-            , ctrl_block_ptr_(new CtrlBlock({1, 0}, std::default_delete<T>(), ptr)) {}
+            , ctrl_block_ptr_(new CtrlBlock(ptr, std::default_delete<T>(), std::allocator<T>())) {}
     
     template <typename Del>
     SharedPtr(T* ptr, Del del)
             : value_ptr_(ptr)
-            , ctrl_block_ptr_(new CtrlBlock({1, 0}, std::default_delete<T>(), ptr)) {}
+            , ctrl_block_ptr_(new CtrlBlock(ptr, std::default_delete<T>(), std::allocator<T>())) {}
 
     template <typename Del, typename Alloc>
     SharedPtr(T* ptr, Del del, Alloc alloc)
             : value_ptr_(ptr)
-            , ctrl_block_ptr_(new CtrlBlock({1, 0}, std::default_delete<T>(), ptr)) {}
+            , ctrl_block_ptr_(new CtrlBlock(ptr, std::default_delete<T>(), std::allocator<T>())) {}
     
 
     SharedPtr(const SharedPtr& other) noexcept
@@ -84,8 +124,8 @@ public:
     template <typename U>
     requires std::is_convertible_v<U*, T*>
     SharedPtr(const SharedPtr<U>& other)
-            : value_ptr_(static_cast<T*>(other.value_ptr_))
-            , ctrl_block_ptr_(reinterpret_cast<CtrlBlock<T>*>(other.ctrl_block_ptr_)) {
+            : value_ptr_(other.value_ptr_)
+            , ctrl_block_ptr_(other.ctrl_block_ptr_) {
         if (ctrl_block_ptr_)
             ++(ctrl_block_ptr_->shared_count_);
     }
@@ -103,42 +143,32 @@ public:
         return *this;
     }
 
+    /*
     template <typename U>
     requires std::is_convertible_v<U*, T*>
     SharedPtr& operator=(SharedPtr<U>&& other) noexcept {
         swap(SharedPtr());
 
         value_ptr_ = static_cast<T*>(other.value_ptr_);
-        ctrl_block_ptr_ = reinterpret_cast<CtrlBlock<T>*>(other.ctrl_block_ptr_);
+        ctrl_block_ptr_ = reinterpret_cast<VirtualControlBlockBase<T>*>(other.ctrl_block_ptr_);
 
         other.value_ptr_ = nullptr;
         other.ctrl_block_ptr_ = nullptr;
 
         return *this;
     }
+    */
 
     ~SharedPtr() {
-        if (    !ctrl_block_ptr_ 
-            || --ctrl_block_ptr_->shared_count_) {
-            
+        if (!ctrl_block_ptr_)
             return;
-        }
         
-        if (value_ptr_)
-            value_ptr_->~T();
-        
-        if (reinterpret_cast<char*>(value_ptr_) - reinterpret_cast<char*>(ctrl_block_ptr_) != sizeof(CtrlBlock<T>)) {
-            // was not created using makeShared
-            operator delete(value_ptr_);
+        if (--ctrl_block_ptr_->shared_count_ == 0) {
+            ctrl_block_ptr_->dispose();
+            if (ctrl_block_ptr_->weak_count_ == 0) {
+                ctrl_block_ptr_->destroy();
+            }
         }
-
-        if (ctrl_block_ptr_->weak_count_ == 0) {      
-            
-            if (ctrl_block_ptr_)
-                ctrl_block_ptr_->~CtrlBlock();
-
-            operator delete(ctrl_block_ptr_);
-        } 
     }
 
     T& operator*() const noexcept {
@@ -175,19 +205,20 @@ public:
     }
 
 private:
-    SharedPtr(CtrlBlockWithObject<T>* ctrl_block_with_object_ptr) 
-            : value_ptr_(ctrl_block_with_object_ptr->value_ptr_)
+
+    SharedPtr(CtrlBlockMakeShared<T, std::allocator<T>>* ctrl_block_with_object_ptr) 
+            : value_ptr_(&(ctrl_block_with_object_ptr->value_))
             , ctrl_block_ptr_(ctrl_block_with_object_ptr) {
         ++ctrl_block_ptr_->shared_count_;
     }
 
-    SharedPtr(CtrlBlock<T>* ctrl_block_ptr) 
+    SharedPtr(VirtualControlBlockBase* ctrl_block_ptr) 
             : value_ptr_(ctrl_block_ptr->value_ptr_)
             , ctrl_block_ptr_(ctrl_block_ptr) {
         if (ctrl_block_ptr)
             ++ctrl_block_ptr_->shared_count_;
     }
-
+/*
     template <typename Alloc, typename... Args>
     SharedPtr(const Alloc& alloc, Args&&... args) {
         using AllocatorTraits = std::allocator_traits<Alloc>;
@@ -207,12 +238,12 @@ private:
         value_ptr_ = new_arr;
         ctrl_block_ptr_ = new CtrlBlock{{1, 0}, std::default_delete<T>(), new_arr};
     }
+        */
 };
 
 template <typename T, typename... Args>
 SharedPtr<T> makeShared(Args&&... args) {
-    auto* p = new SharedPtr<T>::template CtrlBlockWithObject<T>{0, 0, std::default_delete<T>(), nullptr, T(std::forward<Args>(args)...)};
-    p->value_ptr_ = &p->value_;
+    auto* p = new SharedPtr<T>::template CtrlBlockMakeShared<T, std::allocator<T>>{T(std::forward<Args>(args)...), std::allocator<T>()};
     return SharedPtr<T>(p);
 }
 
@@ -220,23 +251,25 @@ template<typename T, typename Alloc>
 using ReboundAlloc = typename std::allocator_traits<Alloc>::template rebind_alloc<T>;
 
 // https://github.com/microsoft/STL/blob/5f8b52546480a01d1d9be6c033e31dfce48d4f13/stl/inc/memory#L3025C44-L3025C59
+/*
 template<typename T, typename Alloc, typename... Args>
 SharedPtr<T> allocateShared(const Alloc& alloc, Args&&... args) {
     return SharedPtr<T>(alloc, std::forward<Args>(args)...);
 }
+*/
 
 
 // weak_ptr, enable_shared_from_this. CRTP
 template <typename T>
 class WeakPtr {
-    using InnerCtrlBlock = SharedPtr<T>::template CtrlBlock<T>;
+    using InnerCtrlBlock = VirtualControlBlockBase;
 
     InnerCtrlBlock* ctrl_block_ptr_;
 
     template <typename U>
     friend class WeakPtr;
 
-    template <typename U, typename Deleter>
+    template <typename U>
     friend class SharedPtr;
 public:
     WeakPtr(const SharedPtr<T>& shared_ptr = SharedPtr<T>())
@@ -277,14 +310,12 @@ public:
     }
 
     ~WeakPtr() {
-        if (    !ctrl_block_ptr_
-            || --ctrl_block_ptr_->weak_count_)
+        if (!ctrl_block_ptr_)
             return;
 
-        if (ctrl_block_ptr_->shared_count_)
-            return;
-
-        operator delete(ctrl_block_ptr_);
+        if (--ctrl_block_ptr_->weak_count_ == 0) {
+            ctrl_block_ptr_->destroy();
+        }
     }
 
     
@@ -293,9 +324,14 @@ public:
     }
 
     SharedPtr<T> lock() const noexcept{
-        return expired()
-            ? SharedPtr<T>()
-            : SharedPtr<T>(ctrl_block_ptr_);
+        if (ctrl_block_ptr_ && ctrl_block_ptr_->shared_count_ > 0) {
+            SharedPtr<T> sp;
+            sp.value_ptr_ = value_ptr_;
+            sp.ctrl_block_ptr_ = ctrl_block_ptr_;
+            ++ctrl_block_ptr_->shared_count_;
+            return sp;
+        }
+        return SharedPtr<T>();
     }
 
     size_t use_count() const noexcept {
@@ -317,7 +353,7 @@ public:
         return weak_ptr_.lock();
     }
 
-    template <typename Y, typename Deleter>
+    template <typename Y>
     friend class SharedPtr;
 };
 
