@@ -4,6 +4,9 @@
 template <typename T>
 struct EnableSharedFromThis;
 
+template <typename T>
+struct WeakPtr;
+
 namespace {
     struct VirtualControlBlockBase {
         size_t shared_count_ = 1;
@@ -96,7 +99,12 @@ public:
 
     SharedPtr(T* ptr)
             : value_ptr_(ptr)
-            , ctrl_block_ptr_(new CtrlBlock(ptr, std::default_delete<T>(), std::allocator<T>())) {}
+            , ctrl_block_ptr_(new CtrlBlock(ptr, std::default_delete<T>(), std::allocator<T>())) {
+
+        if constexpr (std::is_base_of_v<EnableSharedFromThis<T>, T>) {
+            ptr->weak_ptr_ = *this;
+        }
+    }
     
     template <typename Del>
     SharedPtr(T* ptr, Del del)
@@ -161,10 +169,13 @@ public:
     ~SharedPtr() {
         if (!ctrl_block_ptr_)
             return;
-        
+    
         if (--ctrl_block_ptr_->shared_count_ == 0) {
+            ctrl_block_ptr_->weak_count_++;
+        
             ctrl_block_ptr_->dispose();
-            if (ctrl_block_ptr_->weak_count_ == 0) {
+        
+            if (--ctrl_block_ptr_->weak_count_ == 0) {
                 ctrl_block_ptr_->destroy();
             }
         }
@@ -203,12 +214,21 @@ public:
         return value_ptr_;
     }
 
+    operator bool() const noexcept {
+        return ctrl_block_ptr_;
+    }
+
 private:
 
     template <typename UAlloc>
     SharedPtr(CtrlBlockMakeShared<T, UAlloc>* ctrl_block_with_object_ptr) 
             : value_ptr_(&(ctrl_block_with_object_ptr->value_))
-            , ctrl_block_ptr_(ctrl_block_with_object_ptr) {}
+            , ctrl_block_ptr_(ctrl_block_with_object_ptr) {
+
+        if constexpr (std::is_base_of_v<EnableSharedFromThis<T>, T>) {
+            value_ptr_->weak_ptr_ = *this;
+        }
+    }
 };
 
 template<typename T, typename Alloc, typename... Args>
@@ -338,16 +358,13 @@ class EnableSharedFromThis {
 public:
     EnableSharedFromThis() {}
     SharedPtr<T> shared_from_this() const {
-        return weak_ptr_.lock();
+        SharedPtr<T> ptr = weak_ptr_.lock();
+        if (!ptr) {
+            throw std::bad_weak_ptr(); 
+        }
+        return ptr;
     }
 
     template <typename Y>
     friend class SharedPtr;
 };
-
-
-// template <class _Ty>
-// class _Ref_count : public _Ref_count_base { // handle reference counting for pointer without deleter
-
-// template <class _Resource, class _Dx>
-// class _Ref_count_resource : public _Ref_count_base { // handle reference counting for object with deleter
