@@ -463,7 +463,6 @@ void test_make_allocate_shared() {
     destroy_called = 0;
 }
 
-/*
 struct Enabled: public EnableSharedFromThis<Enabled> {
     SharedPtr<Enabled> get_shared() {
         return shared_from_this();
@@ -483,7 +482,6 @@ void test_enable_shared_from_this() {
     }
 
     auto esp = makeShared<Enabled>();
-
     auto& e = *esp;
     auto sp = e.get_shared();
 
@@ -517,6 +515,7 @@ struct Son: public Mother {
         ++son_destroyed;
     }
 };
+
 
 void test_inheritance_destroy() {
     {
@@ -640,14 +639,14 @@ void test_custom_deleter() {
     assert(destroy_called == 0);
     assert(custom_deleter_called == 1);
 }
-*/
+
 
 int main() {
-    //static_assert(!std::is_base_of_v<std::shared_ptr<VerySpecialType>, SharedPtr<VerySpecialType>>,
-    //        "don't try to use std smart pointers");
+    static_assert(!std::is_base_of_v<std::shared_ptr<VerySpecialType>, SharedPtr<VerySpecialType>>,
+            "don't try to use std smart pointers");
     
-    //static_assert(!std::is_base_of_v<std::weak_ptr<VerySpecialType>, WeakPtr<VerySpecialType>>,
-    //        "don't try to use std smart pointers");
+    static_assert(!std::is_base_of_v<std::weak_ptr<VerySpecialType>, WeakPtr<VerySpecialType>>,
+            "don't try to use std smart pointers");
     
     std::cerr << "Starting tests..." << std::endl;
     
@@ -659,9 +658,10 @@ int main() {
 
     test_make_allocate_shared();
     std::cerr << "Test 3 (make/allocate shared) passed." << std::endl;
-/*    
-    test_enable_shared_from_this();
     
+    test_enable_shared_from_this();
+    std::cerr << "Test 3.1 (enable shared from this) passed." << std::endl;
+ 
     test_inheritance_destroy();    
     std::cerr << "Test 4 (inheritance) passed." << std::endl;
 
@@ -672,6 +672,5 @@ int main() {
     
     assert((!std::is_base_of_v<std::weak_ptr<VerySpecialType>, WeakPtr<VerySpecialType>>));
 
-    std::cout << 0;
-    */
-}//: value_ptr_(other.value_ptr_), ctrl_block_ptr_(other.ctrl_block_ptr_) 
+    std::cout << 0;  
+}
