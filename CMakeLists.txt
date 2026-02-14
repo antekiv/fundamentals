@@ -5,6 +5,7 @@ list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 include(project_configuration)
 
 add_subdirectory(deque)
+add_subdirectory(concurrency)
 add_subdirectory(shared_ptr)
 add_subdirectory(stackallocator)
 add_subdirectory(tuple)

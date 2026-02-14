@@ -1,0 +1,1 @@
+add_project_executable(hello_concurrent_world)
