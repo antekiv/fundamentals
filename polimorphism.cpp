@@ -4,7 +4,7 @@
 // polimorphic·type - the type which has at most one virtual function or inherited the last one.
 struct Base {
     // always need a virtual destructor
-    virtual ~Base() { std::cout << "~Base" << std::endl;}
+    ~Base() { std::cout << "~Base" << std::endl;}
     virtual void f(){
         std::cout << 1 << std::endl;
     }
@@ -44,9 +44,68 @@ struct Square : Shape {
     }
 };
 
+#include <vector>
+#include <algorithm>
+// Observer
+
+// pure virtual
+struct IObserver {
+    virtual void update(const std::string& news) = 0;
+    virtual ~IObserver() = default;
+};
+
+struct NewsAgency {
+    void Subscribe(IObserver* obs) { 
+        observers.push_back(obs);
+    }
+    void Unsubscribe(IObserver* obs) { 
+        std::remove(observers.begin(), observers.end(), obs), observers.end();
+    }
+    void PublishNews(const std::string& news) {
+        notify(news);
+    }
+
+    ~NewsAgency() {
+        for (const auto& obs : observers) {
+            delete obs;
+        }
+    }
+
+private:
+    void notify(const std::string& news) {
+        for (const auto& obs : observers) {
+            obs->update(news);
+        }
+    }
+    
+private:
+    std::vector<IObserver*> observers;
+};
+
+struct TVViwer : IObserver {
+    void update(const std::string& news) override {
+        std::cout << "TVViewer: " << news << std::endl;
+    }
+};
+
+struct YoutubeViwer : IObserver {
+    void update(const std::string& news) override {
+        std::cout << "YoutubeViwer: " << news << std::endl;
+    }
+};
+
+struct RadioViwer : IObserver {
+    void update(const std::string& news) override {
+        std::cout << "RadioViwer: " << news << std::endl;
+    }
+};
+
 int main()
 {
-    Square s(5);
-    std::cout << "Square: " << s.area() << " Base: " << s.Shape::area()
-        << std::endl;
+    NewsAgency na;
+    na.Subscribe(new TVViwer());
+    na.Subscribe(new YoutubeViwer());
+    na.Subscribe(new RadioViwer());
+    na.PublishNews("Hello Kitty!");
+
 }
