@@ -1,1 +1,2 @@
 add_project_executable(hello_concurrent_world)
+add_project_executable(passing_params_in_thread_func)
