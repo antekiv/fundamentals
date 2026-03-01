@@ -1,7 +1,12 @@
+# mutex
 add_project_executable(hello_concurrent_world)
 add_project_executable(passing_params_in_thread_func)
 
-# mutex
+# guards
 add_project_executable(guards_transfer_money)
 add_project_executable(guards_printer)
 add_project_executable(guards_shared_locking)
+add_project_executable(guards_smart_lock)
+
+# conditional variable
+add_project_executable(condition_variable)
