@@ -10,3 +10,4 @@ add_project_executable(guards_smart_lock)
 
 # conditional variable
 add_project_executable(condition_variable)
+add_project_executable(thread_pool)
