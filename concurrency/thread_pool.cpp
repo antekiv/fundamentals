@@ -5,6 +5,7 @@
 #include <condition_variable>
 
 #include <functional>
+#include <future>
 
 #include <memory>
 #include <mutex>
@@ -17,22 +18,26 @@ namespace {
 
 template <typename FTask,  std::size_t N>
 requires (N <= MAX_THREADS)
+template <std::size_t thread_count>
+requires (thread_count <= MAX_THREADS)
 class ThreadPool
-                : public std::enable_shared_from_this<ThreadPool<FTask, N>> {
+                : public std::enable_shared_from_this<ThreadPool<thread_count>> {
 
-    std::array<std::jthread, N> threads_;
     // std::pair<FTask, Args...> 
-    std::queue<FTask> tasks_;
+    std::queue<std::move_only_function<void()>> tasks_;
     mutable std::mutex tasks_mutex_;
     std::condition_variable cv_;
+    std::array<std::jthread, thread_count> threads_;
 public:
     ThreadPool() = default;
     ~ThreadPool() {
+        // STOP ALL TASKS
         for (auto& th : threads_) {
             th.request_stop();
         }
         cv_.notify_all();
     }
+
     void Run() {
         auto self = this->weak_from_this();
 
@@ -45,7 +50,7 @@ public:
         }
     }
 
-    template <typename... Args>
+    template <typename FTask, typename... Args>
     requires std::invocable<FTask, Args...>
     void AddTask(FTask func/*, Args&&... args*/) {
         {
@@ -55,11 +60,31 @@ public:
         cv_.notify_one();
     }
 
+    template <typename FunctionType, typename ...Args>
+    std::future<typename std::result_of_t<FunctionType(Args...)>>
+        Submit(FunctionType f, Args&&... args) {
+            using result_type = typename std::result_of_t<FunctionType(Args...)>;
+
+            std::packaged_task<result_type()> task(std::move(f));
+            std::future<result_type> res(task.get_future());
+
+            {
+                std::scoped_lock lock(tasks_mutex_);
+                tasks_.emplace([ta = std::move(task)]() mutable {
+                    // Not optimal
+                    ta();
+                });
+            }
+            cv_.notify_one();
+
+            return res;
+        }
+
 private:
     void worker(std::stop_token stoken) {
 
         while (true) {
-            FTask current_task;
+            std::move_only_function<void()> current_task;
             {
                 std::unique_lock lock(tasks_mutex_);
                 // enable_shared_from_this
@@ -73,15 +98,30 @@ private:
                 if (this->tasks_.empty())
                     continue;
 
-                current_task = tasks_.front();
+                current_task = std::move(tasks_.front());
                 tasks_.pop();
-                //std::cout << tasks_.size() << std::endl;
             }
 
-            current_task();
+            try {
+                current_task();
+            }
+            catch (const std::exception& e) {
+                std::cout << "[ERROR] while processing task: " << e.what() << std::endl;
+            }
+            catch (...) {
+                std::cout << "[ERROR] unrecognized throw" << std::endl;
+            }
         }
     }
 };
+
+int sum() {
+    return 34344;
+}
+
+void foo() {
+    std::cout << "HI!\n";
+}
 
 int main() {
     {
