@@ -29,12 +29,8 @@ class ThreadPool : public std::enable_shared_from_this<ThreadPool<thread_count>>
 public:
     ThreadPool() = default;
     ~ThreadPool() {
-        for (auto& th : threads_) {
-            th.request_stop();
-        }
-        cv_.notify_all();
-
-        // safe wait???
+        if (!Stopped())
+            ForseStop();
     }
 
     void Run() {
@@ -47,6 +43,31 @@ public:
                 }
             });
         }
+    }
+
+    void SafeStop() {
+
+        std::unique_lock<std::mutex> lock(tasks_mutex_);
+        cv_.wait(lock, [this]() { 
+            return tasks_.empty();
+        });
+        
+        ForseStop();
+    }
+
+    void ForseStop() {
+        for (auto& th : threads_) {
+            th.request_stop();
+        }
+        cv_.notify_all();
+
+        for (auto& th : threads_) {
+            th.join();
+        }
+    }
+
+    bool Stopped() const {
+        return std::any_of(threads_.cbegin(), threads_.end(), [](const auto& th){ return !th.joinable();} );
     }
 
     template <typename FTask, typename... Args>
@@ -159,22 +180,13 @@ int main() {
         {
             pool->AddTask(incr);
         }
+        
+        assert(pool->Stopped() == true);
         pool->Run();
-
-        //assert(sum == 1'000);
-        
-        std::this_thread::sleep_for(std::chrono::seconds(2)); 
+        assert(pool->Stopped() == false);
+        pool->SafeStop();
+        assert(pool->Stopped() == true);
         std::cout << sum << std::endl;
+        assert(sum == 1'000);
     }
-
-    /*
-        std::cout << "Hello thread pool!" << std::endl;
-        std::cout << "RESULT: " << future.get() << std::endl;
-        
-        
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-        std::cout << "result: " << sum << std::endl;
-        */
-    
-    
 }
