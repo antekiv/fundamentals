@@ -1,6 +1,6 @@
 #include <iostream>
 #include <array>
-#include <atomic>
+#include <cassert>
 #include <concepts>
 #include <condition_variable>
 
@@ -13,29 +13,28 @@
 #include <thread>
 
 namespace {
-    constexpr std::size_t MAX_THREADS = 32;
+    constexpr int MAX_THREADS = 32;
 }
 
-template <typename FTask,  std::size_t N>
-requires (N <= MAX_THREADS)
-template <std::size_t thread_count>
-requires (thread_count <= MAX_THREADS)
-class ThreadPool
-                : public std::enable_shared_from_this<ThreadPool<thread_count>> {
+template <int thread_count>
+requires (thread_count > 0 && thread_count <= MAX_THREADS)
+class ThreadPool : public std::enable_shared_from_this<ThreadPool<thread_count>> {
 
-    // std::pair<FTask, Args...> 
-    std::queue<std::move_only_function<void()>> tasks_;
+    using internal_task_f = std::move_only_function<void()>;
+    
+    std::queue<internal_task_f> tasks_;
     mutable std::mutex tasks_mutex_;
     std::condition_variable cv_;
     std::array<std::jthread, thread_count> threads_;
 public:
     ThreadPool() = default;
     ~ThreadPool() {
-        // STOP ALL TASKS
         for (auto& th : threads_) {
             th.request_stop();
         }
         cv_.notify_all();
+
+        // safe wait???
     }
 
     void Run() {
@@ -61,17 +60,20 @@ public:
     }
 
     template <typename FunctionType, typename ...Args>
+    requires std::invocable<FunctionType, Args...>
     std::future<typename std::result_of_t<FunctionType(Args...)>>
         Submit(FunctionType f, Args&&... args) {
-            using result_type = typename std::result_of_t<FunctionType(Args...)>;
+            using result_type = typename std::invoke_result_t<FunctionType, Args...>;
 
-            std::packaged_task<result_type()> task(std::move(f));
+            std::packaged_task<result_type()> task(
+                [f = std::move(f), ...args = std::forward<Args>(args)]() mutable {
+                return std::invoke(std::move(f), std::forward<Args>(args)...);
+            });
             std::future<result_type> res(task.get_future());
 
             {
                 std::scoped_lock lock(tasks_mutex_);
                 tasks_.emplace([ta = std::move(task)]() mutable {
-                    // Not optimal
                     ta();
                 });
             }
@@ -84,7 +86,7 @@ private:
     void worker(std::stop_token stoken) {
 
         while (true) {
-            std::move_only_function<void()> current_task;
+            internal_task_f current_task;
             {
                 std::unique_lock lock(tasks_mutex_);
                 // enable_shared_from_this
@@ -115,26 +117,64 @@ private:
     }
 };
 
-int sum() {
-    return 34344;
+
+
+namespace test {
+
+template <int T>
+constexpr bool explicit_test() {
+    return requires {
+        std::make_shared<ThreadPool<T>>();
+    };
+}
+
+int sum(int a, int b) {
+    return a + b;
 }
 
 void foo() {
     std::cout << "HI!\n";
 }
 
+}
+
+
 int main() {
+        
     {
-        std::atomic<int> i = 0;
-        auto incr = [&i](){ ++i; };
-        std::shared_ptr<ThreadPool<std::function<void()>, 4>> pool = std::make_shared<ThreadPool<std::function<void()>, 4>>();
-        for (int i = 0; i < 1'000'000; ++i)
+        // construct template test
+        static_assert( test::explicit_test<3>());
+        static_assert(!test::explicit_test<0>());
+        static_assert(!test::explicit_test<-1>());
+        static_assert(!test::explicit_test<34>());
+    }
+
+    {
+        std::atomic<int> sum = 0;
+        auto incr = [&sum](){ ++sum; };
+        
+        auto pool = std::make_shared<ThreadPool<3>>();
+        
+        for (int i = 0; i < 1'000; ++i)
         {
             pool->AddTask(incr);
         }
         pool->Run();
-        std::this_thread::sleep_for(std::chrono::seconds(5));
+
+        //assert(sum == 1'000);
         
-        std::cout << "result: " << i << std::endl;
-    }  
+        std::this_thread::sleep_for(std::chrono::seconds(2)); 
+        std::cout << sum << std::endl;
+    }
+
+    /*
+        std::cout << "Hello thread pool!" << std::endl;
+        std::cout << "RESULT: " << future.get() << std::endl;
+        
+        
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        std::cout << "result: " << sum << std::endl;
+        */
+    
+    
 }
