@@ -24,13 +24,16 @@ class ThreadPool : public std::enable_shared_from_this<ThreadPool<thread_count>>
     
     std::queue<internal_task_f> tasks_;
     mutable std::mutex tasks_mutex_;
-    std::condition_variable cv_;
+    std::condition_variable_any cv_;
     std::array<std::jthread, thread_count> threads_;
+
+    std::condition_variable wait_cv_;
+    // add counter and tasks :hm:
+    int active_tasks_{0};     
 public:
     ThreadPool() = default;
     ~ThreadPool() {
-        if (!Stopped())
-            ForseStop();
+        ForceStop();
     }
 
     void Run() {
@@ -46,24 +49,29 @@ public:
     }
 
     void SafeStop() {
+        {
+            std::cout << "SafeStop" << std::endl;
+            std::unique_lock<std::mutex> lock(tasks_mutex_);
+            wait_cv_.wait(lock, [this]() { 
+                return tasks_.empty() && active_tasks_ == 0;
+            });
 
-        std::unique_lock<std::mutex> lock(tasks_mutex_);
-        cv_.wait(lock, [this]() { 
-            return tasks_.empty();
-        });
-        
-        ForseStop();
+            std::cout << "start ForceStop" << std::endl;
+        }
+        ForceStop();
     }
 
-    void ForseStop() {
+    void ForceStop() {
         for (auto& th : threads_) {
             th.request_stop();
         }
-        cv_.notify_all();
 
         for (auto& th : threads_) {
-            th.join();
+            if (th.joinable()) {
+                th.join();
+            }
         }
+
     }
 
     bool Stopped() const {
@@ -111,8 +119,8 @@ private:
             {
                 std::unique_lock lock(tasks_mutex_);
                 // enable_shared_from_this
-                cv_.wait(lock, [this, &stoken] { 
-                    return stoken.stop_requested() || !this->tasks_.empty(); 
+                cv_.wait(lock, stoken, [this] { 
+                    return !this->tasks_.empty(); 
                 });
 
                 if (stoken.stop_requested())
@@ -123,6 +131,7 @@ private:
 
                 current_task = std::move(tasks_.front());
                 tasks_.pop();
+                ++active_tasks_;
             }
 
             try {
@@ -133,6 +142,14 @@ private:
             }
             catch (...) {
                 std::cout << "[ERROR] unrecognized throw" << std::endl;
+            }
+
+            {
+                std::scoped_lock lock(tasks_mutex_);
+                --active_tasks_;
+                if (tasks_.empty() && active_tasks_ == 0) {
+                    wait_cv_.notify_all();
+                }
             }
         }
     }
@@ -171,6 +188,7 @@ int main() {
     }
 
     {
+        // void func. no throw
         std::atomic<int> sum = 0;
         auto incr = [&sum](){ ++sum; };
         
@@ -186,7 +204,31 @@ int main() {
         assert(pool->Stopped() == false);
         pool->SafeStop();
         assert(pool->Stopped() == true);
-        std::cout << sum << std::endl;
+        assert(sum == 1'000);
+    }
+
+    {
+        // void func. throw
+        std::atomic<int> sum = 0;
+        auto incr = [&sum](){
+            ++sum;
+
+            if (sum % 100 == 0)
+                throw std::runtime_error{"some runtime error"};
+         };
+        
+        auto pool = std::make_shared<ThreadPool<4>>();
+        
+        for (int i = 0; i < 1'000; ++i)
+        {
+            pool->AddTask(incr);
+        }
+        
+        assert(pool->Stopped() == true);
+        pool->Run();
+        assert(pool->Stopped() == false);
+        pool->SafeStop();
+        assert(pool->Stopped() == true);
         assert(sum == 1'000);
     }
 }
