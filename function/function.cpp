@@ -33,40 +33,50 @@ class function<Ret(Args...)> {
    
 private:
     static const size_t BUFFER_SIZE = 16;
-    Base* fptr;
     
     alignas (max_align_t) char buffer[BUFFER_SIZE];
     using invoke_ptr_t = Ret(*)(void*, Args...);
-    invoke_ptr_t invoke_ptr;
+    using destroy_ptr_t = void(*)(void*);
+
+    void* fptr_;
+    invoke_ptr_t invoke_ptr_;
+    destroy_ptr_t destroy_ptr_;
 
 public:
     template <typename F>
     static Ret invoker(F* fptr, Args... args) {
-        // std::invoke
-        // pointer to member?
-
         return (*fptr)(std::forward<Args>(args)...);
+    }
+
+    template <typename F>
+    static void destroyer(F* fptr) {
+        if constexpr (sizeof(F) > BUFFER_SIZE) {
+            delete fptr;
+        } else {
+            fptr->~F();
+        }
     }
 
     
     template <typename F>
     function(const F& func)
-        : invoke_ptr(reinterpret_cast<invoke_ptr_t>(&invoker<F>))
-        , destroy_ptr(reinterpret_cast<invoke_ptr_t>(&invoker<F>))
+        : invoke_ptr_(reinterpret_cast<invoke_ptr_t>(&invoker<F>))
+        , destroy_ptr_(reinterpret_cast<destroy_ptr_t>(&destroyer<F>))
     {
         if constexpr (sizeof(F) > BUFFER_SIZE) {
-            fptr = new F(func);
+            fptr_ = new F(func);
         } else {
             new (buffer) F(func);
-            fptr = buffer;
+            fptr_ = buffer;
         }
     }
 
     ~function() {
-        delete fptr; 
+        destroy_ptr_(fptr_); 
     }
 
     Ret operator()(Args... args) const {
-        return fptr->call(std::forward<Args>(args)...);
+        return invoke_ptr_(fptr_, std::forward<Args>(args)...);
+        //return fptr->call(std::forward<Args>(args)...);
     }
 };
