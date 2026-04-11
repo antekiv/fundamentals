@@ -6,6 +6,7 @@ include(project_configuration)
 
 add_subdirectory(deque)
 add_subdirectory(concurrency)
+add_subdirectory(function)
 add_subdirectory(shared_ptr)
 add_subdirectory(stackallocator)
 add_subdirectory(tuple)
