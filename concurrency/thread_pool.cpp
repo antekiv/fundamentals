@@ -12,6 +12,7 @@
 #include <queue>
 #include <thread>
 
+// TODO: thread_local query task
 namespace {
     constexpr int MAX_THREADS = 32;
 }
@@ -28,7 +29,6 @@ class ThreadPool : public std::enable_shared_from_this<ThreadPool<thread_count>>
     std::array<std::jthread, thread_count> threads_;
 
     std::condition_variable wait_cv_;
-    // add counter and tasks :hm:
     int active_tasks_{0};     
 public:
     ThreadPool() = default;
@@ -50,13 +50,10 @@ public:
 
     void SafeStop() {
         {
-            std::cout << "SafeStop" << std::endl;
             std::unique_lock<std::mutex> lock(tasks_mutex_);
             wait_cv_.wait(lock, [this]() { 
                 return tasks_.empty() && active_tasks_ == 0;
             });
-
-            std::cout << "start ForceStop" << std::endl;
         }
         ForceStop();
     }
@@ -71,7 +68,6 @@ public:
                 th.join();
             }
         }
-
     }
 
     bool Stopped() const {
@@ -138,10 +134,11 @@ private:
                 current_task();
             }
             catch (const std::exception& e) {
-                std::cout << "[ERROR] while processing task: " << e.what() << std::endl;
+                // TODO: print in custom logger
+                //std::cout << "[ERROR] while processing task: " << e.what() << std::endl;
             }
             catch (...) {
-                std::cout << "[ERROR] unrecognized throw" << std::endl;
+                //std::cout << "[ERROR] unrecognized throw" << std::endl;
             }
 
             {
@@ -188,9 +185,14 @@ int main() {
     }
 
     {
-        // void func. no throw
+        // void func. throw
         std::atomic<int> sum = 0;
-        auto incr = [&sum](){ ++sum; };
+        auto incr = [&sum](){
+            ++sum;
+
+            if (sum % 100 == 0)
+                throw std::runtime_error{"some runtime error"};
+         };
         
         auto pool = std::make_shared<ThreadPool<3>>();
         
@@ -208,27 +210,55 @@ int main() {
     }
 
     {
-        // void func. throw
+        // 1 producer, 2 consumer
         std::atomic<int> sum = 0;
         auto incr = [&sum](){
             ++sum;
+        };
 
-            if (sum % 100 == 0)
-                throw std::runtime_error{"some runtime error"};
-         };
-        
-        auto pool = std::make_shared<ThreadPool<4>>();
-        
+        auto pool = std::make_shared<ThreadPool<2>>();
+        pool->Run();
+
         for (int i = 0; i < 1'000; ++i)
         {
             pool->AddTask(incr);
         }
-        
-        assert(pool->Stopped() == true);
-        pool->Run();
-        assert(pool->Stopped() == false);
+
         pool->SafeStop();
         assert(pool->Stopped() == true);
         assert(sum == 1'000);
+
+        std::cout << "Test: 1 produser, 2 consumer done!" << std::endl;
+    }
+
+    {
+        // 3 producer, 5 consumer
+        std::atomic<int> sum = 0;
+        auto incr = [&sum](){
+            ++sum;
+        };
+
+        auto pool = std::make_shared<ThreadPool<5>>();
+        pool->Run();
+
+        auto addTasks = [&](){
+            for (int i = 0; i < 10'000; ++i) {
+                pool->AddTask(incr);
+            }
+        };
+
+        std::vector<std::thread> produsers;
+        for (int i = 0; i < 3; ++i) {
+            produsers.emplace_back(std::thread{addTasks});
+        }
+
+        for (auto& th : produsers)
+            th.join();
+
+        pool->SafeStop();
+        assert(pool->Stopped() == true);
+        assert(sum == 30'000);
+
+        std::cout << "Test: 3 produser, 5 consumer done!" << std::endl;
     }
 }
